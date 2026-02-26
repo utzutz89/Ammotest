@@ -38,6 +38,14 @@
     const physicsWorld = physics.world;
     const tmpTransform = new AmmoLib.btTransform();
     const tmpVelocity = new AmmoLib.btVector3(0, 0, 0);
+    const tmpZombieToPlayer = new THREE.Vector3();
+    const tmpZombieDesiredDir = new THREE.Vector3();
+    const tmpRadialDelta = new THREE.Vector3();
+    const tmpRadialProcessedBodies = new Set();
+    const DECAL_FORWARD = new THREE.Vector3(0, 0, 1);
+    const DECAL_RAY_DOWN = new THREE.Vector3(0, -1, 0);
+    const tmpDecalRayOrigin = new THREE.Vector3();
+    const tmpDecalNormal = new THREE.Vector3();
 
     const raycaster = new THREE.Raycaster();
     const aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.15);
@@ -1359,21 +1367,23 @@
           continue;
         }
 
-        const toPlayer = new THREE.Vector3().subVectors(player.root.position, zombie.root.position);
-        const distance = toPlayer.length();
-        if (distance > 0.001) toPlayer.multiplyScalar(1 / distance);
+        tmpZombieToPlayer.subVectors(player.root.position, zombie.root.position);
+        const distance = tmpZombieToPlayer.length();
+        if (distance > 0.001) tmpZombieToPlayer.multiplyScalar(1 / distance);
 
         const strafe = Math.sin(now * 1.7 + zombie.phase) * 0.35 * zombie.lateral;
-        const desiredX = toPlayer.x + toPlayer.z * strafe;
-        const desiredZ = toPlayer.z - toPlayer.x * strafe;
-        const desiredDir = new THREE.Vector3(desiredX, 0, desiredZ).normalize();
+        const desiredX = tmpZombieToPlayer.x + tmpZombieToPlayer.z * strafe;
+        const desiredZ = tmpZombieToPlayer.z - tmpZombieToPlayer.x * strafe;
+        tmpZombieDesiredDir.set(desiredX, 0, desiredZ);
+        if (tmpZombieDesiredDir.lengthSq() > 0.000001) tmpZombieDesiredDir.normalize();
+        else tmpZombieDesiredDir.set(0, 0, 0);
 
         const currentVelocity = zombie.body.getLinearVelocity();
         const drive = zombie.hitStagger > 0 ? 0 : (distance > 1.95 ? zombie.speed : 0);
         if (zombie.hitStagger > 0) zombie.hitStagger = Math.max(0, zombie.hitStagger - dt);
-        setBodyVelocity(zombie.body, desiredDir.x * drive, currentVelocity.y(), desiredDir.z * drive);
+        setBodyVelocity(zombie.body, tmpZombieDesiredDir.x * drive, currentVelocity.y(), tmpZombieDesiredDir.z * drive);
 
-        const yaw = Math.atan2(toPlayer.x, toPlayer.z);
+        const yaw = Math.atan2(tmpZombieToPlayer.x, tmpZombieToPlayer.z);
         const sway = Math.sin(now * 5.1 + zombie.phase) * 0.12;
         zombie.root.rotation.y = yaw + sway;
         zombie.root.rotation.z = sway * 0.3;
@@ -1988,26 +1998,39 @@
     }
 
     function applyRadialImpulse(origin, radius, strength, upwardBoost) {
+      tmpRadialProcessedBodies.clear();
+
       for (let i = 0; i < dynamicObjects.length; i++) {
         const object = dynamicObjects[i];
         const body = object.userData.physicsBody;
-        if (!body) continue;
-
-        const delta = new THREE.Vector3().subVectors(object.position, origin);
-        const dist = delta.length();
-        if (dist < 0.001 || dist > radius) continue;
-
-        const falloff = 1 - dist / radius;
-        delta.multiplyScalar(1 / dist);
-        const impulse = (strength || 10) * falloff;
-        const currentVelocity = body.getLinearVelocity();
-        setBodyVelocity(
-          body,
-          currentVelocity.x() + delta.x * impulse,
-          currentVelocity.y() + (upwardBoost || 3.5) * falloff,
-          currentVelocity.z() + delta.z * impulse
-        );
+        if (!body || tmpRadialProcessedBodies.has(body)) continue;
+        tmpRadialProcessedBodies.add(body);
+        applyRadialImpulseToBody(body, object.position, origin, radius, strength, upwardBoost);
       }
+
+      for (let zombieIndex = 0; zombieIndex < zombies.length; zombieIndex++) {
+        const zombie = zombies[zombieIndex];
+        if (!zombie || !zombie.body || tmpRadialProcessedBodies.has(zombie.body)) continue;
+        tmpRadialProcessedBodies.add(zombie.body);
+        applyRadialImpulseToBody(zombie.body, zombie.root.position, origin, radius, strength, upwardBoost);
+      }
+    }
+
+    function applyRadialImpulseToBody(body, position, origin, radius, strength, upwardBoost) {
+      tmpRadialDelta.subVectors(position, origin);
+      const dist = tmpRadialDelta.length();
+      if (dist < 0.001 || dist > radius) return;
+
+      const falloff = 1 - dist / radius;
+      tmpRadialDelta.multiplyScalar(1 / dist);
+      const impulse = (strength || 10) * falloff;
+      const currentVelocity = body.getLinearVelocity();
+      setBodyVelocity(
+        body,
+        currentVelocity.x() + tmpRadialDelta.x * impulse,
+        currentVelocity.y() + (upwardBoost || 3.5) * falloff,
+        currentVelocity.z() + tmpRadialDelta.z * impulse
+      );
     }
 
     function removeDestructibleByRef(destructible) {
@@ -2510,8 +2533,13 @@
         const decal = decals[index];
         decal.life -= dt;
 
-        const t = Math.max(0, decal.life / decal.totalLife);
-        decal.mesh.material.opacity = Math.max(0, t * 0.72);
+        const lifeT = Math.max(0, decal.life / decal.totalLife);
+        const fadeStart = Math.max(0.05, Math.min(1, decal.fadeStart || 1));
+        const fadeT = fadeStart >= 0.999
+          ? lifeT
+          : (lifeT >= fadeStart ? 1 : lifeT / fadeStart);
+        const baseOpacity = decal.baseOpacity !== undefined ? decal.baseOpacity : 0.72;
+        decal.mesh.material.opacity = Math.max(0, baseOpacity * fadeT);
 
         if (decal.life <= 0) {
           removeDecal(index);
@@ -2916,54 +2944,66 @@
     }
 
     function spawnImpactDecal(position, normal) {
-      enforceDecalLimit(120);
+      enforceDecalLimit(140, 'impact');
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(0.15, 0.15),
         materials.impactDecal.clone()
       );
-      const safeNormal = normal ? normal.clone().normalize() : WORLD_UP.clone();
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), safeNormal);
+      const safeNormal = getSafeDecalNormal(normal);
+      mesh.quaternion.setFromUnitVectors(DECAL_FORWARD, safeNormal);
       mesh.rotateZ(Math.random() * Math.PI * 2);
       mesh.position.copy(position);
       mesh.position.addScaledVector(safeNormal, 0.03);
       if (Math.abs(safeNormal.y) > 0.7) mesh.position.y = Math.max(mesh.position.y, 0.08);
+      mesh.renderOrder = 14;
       scene.add(mesh);
       const totalLife = 14 + Math.random() * 8;
       decals.push({
+        type: 'impact',
         mesh,
         life: totalLife,
-        totalLife
+        totalLife,
+        baseOpacity: mesh.material.opacity,
+        fadeStart: 1
       });
     }
 
     function spawnBloodSpray(origin, count, life, speed) {
       const particleCount = scaleEffectCount(count, 8);
       for (let i = 0; i < particleCount; i++) {
-        const size = 0.05 + Math.random() * 0.13;
+        const size = 0.07 + Math.random() * 0.14;
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(size, 6, 6),
-          new THREE.MeshBasicMaterial({ color: 0x8c1212, transparent: true, opacity: 1 })
+          new THREE.MeshBasicMaterial({
+            color: 0xb31616,
+            transparent: true,
+            opacity: 0.98,
+            depthWrite: false
+          })
         );
         mesh.position.copy(origin);
         mesh.position.y += Math.random() * 1.2;
+        mesh.renderOrder = 18;
         scene.add(mesh);
 
         const velocity = new THREE.Vector3(
-          THREE.MathUtils.randFloatSpread(1),
-          Math.random() * 1.1 + 0.16,
-          THREE.MathUtils.randFloatSpread(1)
-        ).normalize().multiplyScalar(speed * (0.4 + Math.random() * 1.2));
+          THREE.MathUtils.randFloatSpread(1.2),
+          Math.random() * 1.3 + 0.24,
+          THREE.MathUtils.randFloatSpread(1.2)
+        ).normalize().multiplyScalar(speed * (0.26 + Math.random() * 0.86));
 
-        const totalLife = life * (0.7 + Math.random() * 1.1);
+        const totalLife = life * (1 + Math.random() * 1.05);
         pushEffect({
           mesh,
           velocity,
           life: totalLife,
           totalLife,
-          baseOpacity: 1,
+          baseOpacity: 0.98,
           fade: 2.4,
-          gravity: 22,
-          drag: 0.16
+          gravity: 14,
+          drag: 0.22,
+          floorY: 0.09,
+          settle: true
         });
       }
     }
@@ -3033,35 +3073,96 @@
     }
 
     function spawnBloodDecal(origin, scaleMul) {
-      const position = new THREE.Vector3(origin.x, 0.08, origin.z);
       const life = 60 + Math.random() * 30;
-      spawnBloodDecalOnSurface(position, WORLD_UP, scaleMul, life);
+
+      tmpDecalRayOrigin.set(origin.x, Math.max(0.18, origin.y || 0) + 2.2, origin.z);
+      raycaster.set(tmpDecalRayOrigin, DECAL_RAY_DOWN);
+      raycaster.far = 8;
+      const hits = raycaster.intersectObjects(splatterSurfaces, false);
+      if (hits.length) {
+        const hit = hits[0];
+        const hitNormal = hit.face
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+          : WORLD_UP.clone();
+        spawnBloodDecalOnSurface(hit.point, hitNormal, scaleMul, life);
+        return;
+      }
+
+      spawnBloodDecalOnSurface(origin, WORLD_UP, scaleMul, life);
     }
 
     function spawnBloodDecalOnSurface(position, normal, scaleMul, lifeSeconds) {
-      enforceDecalLimit(80);
-      const useGlossyPool = (scaleMul || 0) > 0.8;
+      enforceDecalLimit(220, 'blood');
+      const normalizedScale = Math.max(0.12, scaleMul || 0.3);
+      const useGlossyPool = normalizedScale > 0.8;
       const decalBaseMaterial = useGlossyPool && materials.bloodDecalGloss
         ? materials.bloodDecalGloss
         : materials.bloodDecal;
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.2 * scaleMul, 1.2 * scaleMul),
+        new THREE.PlaneGeometry(1.2 * normalizedScale, 1.2 * normalizedScale),
         decalBaseMaterial.clone()
       );
-      const n = normal ? normal.clone().normalize() : WORLD_UP.clone();
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+      const n = getSafeDecalNormal(normal);
+      mesh.quaternion.setFromUnitVectors(DECAL_FORWARD, n);
       mesh.rotateZ(Math.random() * Math.PI * 2);
 
-      const targetY = Math.abs(n.y) > 0.72 ? Math.max(0.08, position.y || 0.08) : (position.y || 0.08);
+      const surfaceY = Number.isFinite(position.y) ? position.y : 0.08;
+      const targetY = Math.abs(n.y) > 0.72 ? Math.max(0.09, surfaceY) : surfaceY;
       mesh.position.set(position.x, targetY, position.z);
-      mesh.position.addScaledVector(n, 0.03);
+      mesh.position.addScaledVector(n, 0.045);
+      mesh.renderOrder = 16;
       scene.add(mesh);
       const totalLife = lifeSeconds || (60 + Math.random() * 30);
-      decals.push({ mesh, life: totalLife, totalLife });
+      decals.push({
+        type: 'blood',
+        mesh,
+        life: totalLife,
+        totalLife,
+        baseOpacity: mesh.material.opacity,
+        fadeStart: 0.35
+      });
     }
 
-    function enforceDecalLimit(maxCount) {
+    function getSafeDecalNormal(normal) {
+      if (
+        normal &&
+        Number.isFinite(normal.x) &&
+        Number.isFinite(normal.y) &&
+        Number.isFinite(normal.z)
+      ) {
+        tmpDecalNormal.copy(normal);
+      } else {
+        tmpDecalNormal.copy(WORLD_UP);
+      }
+      if (tmpDecalNormal.lengthSq() < 0.000001) {
+        tmpDecalNormal.copy(WORLD_UP);
+      } else {
+        tmpDecalNormal.normalize();
+      }
+      return tmpDecalNormal;
+    }
+
+    function enforceDecalLimit(maxCount, decalType) {
       const maxDecals = maxCount || 80;
+      if (decalType) {
+        let typeCount = 0;
+        for (let i = 0; i < decals.length; i++) {
+          if (decals[i] && decals[i].type === decalType) typeCount += 1;
+        }
+        while (typeCount >= maxDecals) {
+          let removeIndex = -1;
+          for (let i = 0; i < decals.length; i++) {
+            if (decals[i] && decals[i].type === decalType) {
+              removeIndex = i;
+              break;
+            }
+          }
+          if (removeIndex < 0) break;
+          removeDecal(removeIndex);
+          typeCount -= 1;
+        }
+        return;
+      }
       while (decals.length >= maxDecals) {
         removeDecal(0);
       }
@@ -3580,26 +3681,32 @@
           normalMap: textures.fallbackNormalDecal,
           color: 0x8d1111,
           transparent: true,
-          opacity: 0.75,
+          opacity: 0.84,
           roughness: 1,
           metalness: 0,
+          alphaTest: 0.02,
+          side: THREE.DoubleSide,
+          depthTest: true,
           depthWrite: false,
           polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1
+          polygonOffsetFactor: -2.5,
+          polygonOffsetUnits: -4
         }),
         bloodDecalGloss: new THREE.MeshStandardMaterial({
           map: textures.blood,
           normalMap: textures.fallbackNormalDecal,
           color: 0x6b0000,
           transparent: true,
-          opacity: 0.86,
+          opacity: 0.9,
           roughness: 0.08,
           metalness: 0.72,
+          alphaTest: 0.02,
+          side: THREE.DoubleSide,
+          depthTest: true,
           depthWrite: false,
           polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1
+          polygonOffsetFactor: -2.5,
+          polygonOffsetUnits: -4
         }),
         impactDecal: new THREE.MeshStandardMaterial({
           color: 0x1c1f24,

@@ -61,6 +61,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added project QA standard: after graphics/gameplay changes always run start-check and short graphics-error check.
 - Switched world atmosphere profile (fog/light tuning) and updated zombie visuals to humanoid-part composition with animated gait.
 
+### Fixed
+- Reduced per-frame garbage in `updateZombies()` by reusing temporary `THREE.Vector3` instances instead of allocating new vectors per zombie update.
+- Fixed `applyRadialImpulse()` so cluster explosions also process entries from the `zombies` array and apply velocity impulses to zombie rigid bodies.
+
 ## [0.1.0] - 2026-02-26
 ### Added
 - Initial changelog file.
