@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Top-Down Shooter (Three + Ammo lokal)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="hud">
+      <div><strong>Leben:</strong> <span id="health">100</span></div>
+      <div><strong>Punkte:</strong> <span id="score">0</span></div>
+      <div><strong>Welle:</strong> <span id="wave">1</span></div>
+      <div><strong>Munition:</strong> <span id="ammo">30</span> / <span id="reserve">120</span></div>
+      <div class="hint">WASD bewegen · Maus zielen · Linksklick schießen · R nachladen · Shift sprinten</div>
+    </div>
+    <div id="overlay">
+      <h1>Top-Down Shooter</h1>
+      <p>Drücke <strong>Enter</strong>, um zu starten.</p>
+    </div>
+
+    <script src="vendor/three.min.js"></script>
+    <script src="vendor/ammo.js"></script>
+    <script src="src/game.js"></script>
+  </body>
+</html>
