@@ -70,7 +70,6 @@ echo "[ok] HTML Body-Inhalt extrahiert"
 inject_script "$ROOT_DIR/vendor/three.min.js"
 inject_script "$ROOT_DIR/vendor/ammo.wasm.binary.js"
 inject_script "$ROOT_DIR/vendor/ammo.wasm.js"
-inject_script "$ROOT_DIR/vendor/ammo.js"
 
 for pp in Pass EffectComposer RenderPass ShaderPass SimplexNoise SSAOShader SSAOPass CopyShader VignetteShader FXAAShader; do
   inject_script "$ROOT_DIR/vendor/postprocessing/${pp}.js"

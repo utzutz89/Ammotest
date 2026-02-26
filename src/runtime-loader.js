@@ -1,6 +1,51 @@
 (function () {
+  function ensureOfficialAmmo(api) {
+    return !!(
+      api &&
+      typeof api.btDefaultCollisionConfiguration === 'function' &&
+      typeof api.btCollisionDispatcher === 'function' &&
+      typeof api.btDbvtBroadphase === 'function' &&
+      typeof api.btSequentialImpulseConstraintSolver === 'function' &&
+      typeof api.btDiscreteDynamicsWorld === 'function' &&
+      typeof api.btRigidBody === 'function'
+    );
+  }
+
   if (window.__BUNDLED__) {
-    console.info('[runtime] Bundled mode detected, skipping external runtime bootstrap.');
+    console.info('[runtime] Bundled mode detected, preparing inline Ammo runtime.');
+    window.__AMMO_RUNTIME_PROMISE__ = (async function initBundledAmmo() {
+      if (ensureOfficialAmmo(window.__AMMO_RUNTIME__)) {
+        return window.__AMMO_RUNTIME__;
+      }
+
+      var api = null;
+      var moduleRef = window.Module && typeof window.Module === 'object' ? window.Module : {};
+      window.Module = moduleRef;
+      if (typeof moduleRef.locateFile !== 'function') {
+        moduleRef.locateFile = function (path) { return path; };
+      }
+      if (ensureOfficialAmmo(window.Ammo)) {
+        api = window.Ammo;
+      } else if (typeof window.Ammo === 'function') {
+        api = await Promise.race([
+          window.Ammo(moduleRef),
+          new Promise(function (_, reject) {
+            window.setTimeout(function () {
+              reject(new Error('Ammo initialization timeout in bundled mode.'));
+            }, 12000);
+          })
+        ]);
+      } else if (ensureOfficialAmmo(window.Module)) {
+        api = window.Module;
+      }
+
+      if (!ensureOfficialAmmo(api)) {
+        throw new Error('Bundled Ammo runtime is not available.');
+      }
+
+      window.__AMMO_RUNTIME__ = api;
+      return api;
+    })();
     return;
   }
 
@@ -22,18 +67,6 @@
       typeof window.THREE.WebGLRenderer === 'function' &&
       typeof window.THREE.MeshStandardMaterial === 'function' &&
       typeof window.THREE.Scene === 'function'
-    );
-  }
-
-  function ensureOfficialAmmo(api) {
-    return !!(
-      api &&
-      typeof api.btDefaultCollisionConfiguration === 'function' &&
-      typeof api.btCollisionDispatcher === 'function' &&
-      typeof api.btDbvtBroadphase === 'function' &&
-      typeof api.btSequentialImpulseConstraintSolver === 'function' &&
-      typeof api.btDiscreteDynamicsWorld === 'function' &&
-      typeof api.btRigidBody === 'function'
     );
   }
 
@@ -99,7 +132,7 @@
         var api = null;
         if (typeof window.Ammo === 'function') {
           api = await Promise.race([
-            window.Ammo(),
+            window.Ammo(window.Module),
             new Promise(function (_, reject) {
               window.setTimeout(function () {
                 reject(new Error('Ammo initialization timeout for ' + src));

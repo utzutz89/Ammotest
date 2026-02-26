@@ -1,6 +1,8 @@
 (async function () {
   try {
-    const AmmoLib = window.__AMMO_RUNTIME__ || (typeof Ammo === 'function' ? await Ammo() : null);
+    const AmmoLib = window.__AMMO_RUNTIME__
+      || (window.__AMMO_RUNTIME_PROMISE__ ? await window.__AMMO_RUNTIME_PROMISE__ : null)
+      || (typeof Ammo === 'function' ? await Ammo() : null);
     if (!AmmoLib) throw new Error('Ammo runtime is not available.');
     if (!window.THREE || typeof THREE.WebGLRenderer !== 'function' || typeof THREE.MeshStandardMaterial !== 'function') {
       throw new Error('Official Three.js runtime is required.');
