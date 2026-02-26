@@ -1,35 +1,109 @@
-html, body {
+html,
+body {
   margin: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: Inter, system-ui, sans-serif;
-  background: #04070d;
-  color: #f4f7ff;
+  font-family: "Rajdhani", "Segoe UI", Tahoma, sans-serif;
+  background: #0f151d;
+  color: #f0f4f8;
 }
-canvas { display:block; }
+
+canvas {
+  display: block;
+}
+
 #hud {
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: 14px;
+  left: 14px;
   z-index: 10;
-  background: rgba(8, 13, 24, 0.76);
-  border: 1px solid rgba(122, 171, 255, 0.3);
-  border-radius: 8px;
-  padding: 10px 12px;
-  line-height: 1.4;
-  min-width: 320px;
-  backdrop-filter: blur(6px);
+  min-width: 340px;
+  padding: 12px 14px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  border-radius: 10px;
+  border: 1px solid rgba(153, 205, 255, 0.28);
+  background: linear-gradient(140deg, rgba(10, 20, 32, 0.82), rgba(10, 14, 24, 0.68));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(7px);
 }
-.hint { margin-top: 8px; font-size: 0.86rem; opacity: 0.8; }
+
+#hud strong {
+  color: #b6e5ff;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 0.86rem;
+  color: rgba(229, 237, 245, 0.84);
+}
+
 #overlay {
   position: fixed;
   inset: 0;
+  z-index: 20;
   display: grid;
   place-items: center;
   text-align: center;
-  z-index: 20;
-  background: radial-gradient(circle at center, rgba(13, 20, 34, 0.65), rgba(4, 7, 13, 0.95));
+  background:
+    radial-gradient(circle at 45% 35%, rgba(133, 177, 220, 0.22), transparent 44%),
+    radial-gradient(circle at 55% 62%, rgba(208, 152, 105, 0.2), transparent 48%),
+    rgba(6, 9, 14, 0.8);
 }
-#overlay.hidden { display:none; }
-h1 { margin-bottom: 0.3rem; }
+
+#overlay div {
+  padding: 20px 26px;
+  border-radius: 12px;
+  border: 1px solid rgba(162, 207, 251, 0.34);
+  background: rgba(7, 14, 24, 0.7);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+h1 {
+  margin: 0 0 0.35rem;
+  font-size: 2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+#crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  pointer-events: none;
+  z-index: 15;
+}
+
+#crosshair::before,
+#crosshair::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+#crosshair::before {
+  border: 1px solid rgba(242, 245, 247, 0.65);
+  border-radius: 50%;
+  box-shadow: 0 0 14px rgba(126, 197, 255, 0.35);
+}
+
+#crosshair::after {
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  margin-left: -1px;
+  margin-top: -1px;
+  background: #ffe3aa;
+  border-radius: 50%;
+}

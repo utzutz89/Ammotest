@@ -1,54 +1,42 @@
-# Top-Down Shooter (lokal, ohne Server)
+# Top-Down Shooter (Three.js + Ammo.js, lokal)
 
-Dieses Repository enthält einen spielbaren Top-Down-Shooter, der komplett lokal im Browser läuft (auch via `file://`).
+Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 
-## Enthalten
+- Physically based Rendering (PBR) mit Schatten und Fog
+- Ammo.js Physik-Welt fuer Spieler, Gegner, Projektile und Kollisionen
+- prozedural erzeugte Texturen (Boden, Metall, Kisten, Felsen, Gegner, Spieler)
 
-- `vendor/three.min.js` und `vendor/ammo.js` als lokale Standard-Runtimes.
-- `vendor/three-lite.min.js` und `vendor/ammo-lite.js` als Fallbacks.
-- `src/runtime-loader.js` für automatische Auswahl der verfügbaren Runtime.
-- `src/game.js` mit Spiellogik (Wellen, Gegner, Projektile, HUD, Reload-System).
-
-## Offizielle lokale Bundles herunterladen (empfohlen)
-
-Ich habe ein Script ergänzt, das offizielle Builds in `vendor/` ablegt:
+## Runtimes herunterladen
 
 ```bash
 ./scripts/fetch-official-runtimes.sh
 ```
 
-Es lädt (in dieser Reihenfolge mit Mirror-Fallbacks):
+Das Script legt offizielle Bundles in `vendor/` ab:
 
 - `vendor/three.min.js`
 - `vendor/ammo.wasm.js`
 - `vendor/ammo.wasm.wasm`
-- optional `vendor/ammo.js`
+- `vendor/ammo.js` (Fallback)
 
-> Hinweis: In dieser Container-Umgebung können externe Downloads per Proxy mit `403 Forbidden` blockiert werden.
+## Loader-Verhalten
 
-## Loader-Reihenfolge
-
-`src/runtime-loader.js` lädt automatisch:
-
-1. `vendor/three.min.js`, sonst `vendor/three-lite.min.js`
-2. `vendor/ammo.wasm.js`, sonst `vendor/ammo.js`, sonst `vendor/ammo-lite.js`
-3. danach `src/game.js`
-
-Damit nutzt das Projekt automatisch echte lokale Runtimes, sobald sie vorhanden sind.
+`src/runtime-loader.js` erwartet offizielle Three.js/Ammo.js Runtimes und startet erst dann `src/game.js`.
+Wenn etwas fehlt oder inkompatibel ist, erscheint eine klare Fehlermeldung im Overlay.
 
 ## Start
 
-1. `index.html` im Browser öffnen.
-2. `Enter` drücken, dann spielen.
+1. `index.html` im Browser oeffnen
+2. `Enter` druecken
 
 ## Steuerung
 
 - `WASD`: bewegen
-- `Maus`: zielen
-- `Linksklick`: schießen
-- `R`: nachladen
 - `Shift`: sprinten
+- `Maus`: zielen
+- `Linksklick halten`: feuern
+- `R`: nachladen
 
-## Hinweise
+## Hinweis
 
-Die App benötigt keinen Build-Prozess und keinen Webserver.
+Das Spiel laeuft ohne Build-Prozess und ohne lokalen Webserver.

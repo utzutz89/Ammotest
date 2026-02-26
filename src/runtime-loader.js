@@ -1,47 +1,78 @@
 (function () {
   function loadScript(src) {
     return new Promise((resolve, reject) => {
-      var s = document.createElement('script');
-      s.src = src;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
+      var script = document.createElement('script');
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = function () {
+        reject(new Error('Failed to load: ' + src));
+      };
+      document.head.appendChild(script);
     });
   }
 
+  function ensureOfficialThree() {
+    return !!(
+      window.THREE &&
+      typeof window.THREE.WebGLRenderer === 'function' &&
+      typeof window.THREE.MeshStandardMaterial === 'function' &&
+      typeof window.THREE.Scene === 'function'
+    );
+  }
+
+  function ensureOfficialAmmo(api) {
+    return !!(
+      api &&
+      typeof api.btDefaultCollisionConfiguration === 'function' &&
+      typeof api.btCollisionDispatcher === 'function' &&
+      typeof api.btDbvtBroadphase === 'function' &&
+      typeof api.btSequentialImpulseConstraintSolver === 'function' &&
+      typeof api.btDiscreteDynamicsWorld === 'function' &&
+      typeof api.btRigidBody === 'function'
+    );
+  }
+
   async function loadThree() {
-    try {
-      await loadScript('vendor/three.min.js');
-      console.info('[runtime] Loaded vendor/three.min.js');
-    } catch (err) {
-      await loadScript('vendor/three-lite.min.js');
-      console.warn('[runtime] Fallback: vendor/three-lite.min.js (placeholder runtime).');
+    await loadScript('vendor/three.min.js');
+    if (!ensureOfficialThree()) {
+      throw new Error('vendor/three.min.js is not an official compatible Three.js runtime.');
     }
+    console.info('[runtime] Loaded official Three.js runtime.');
   }
 
   async function loadAmmo() {
-    // Prefer wasm build for better performance/physics.
     window.Module = window.Module || {};
     window.Module.locateFile = function (path) {
       if (path.endsWith('.wasm')) return 'vendor/' + path;
       return path;
     };
 
-    try {
-      await loadScript('vendor/ammo.wasm.js');
-      console.info('[runtime] Loaded vendor/ammo.wasm.js');
-      return;
-    } catch (err) {
-      console.warn('[runtime] ammo.wasm.js not found, trying ammo.js');
+    var lastError = null;
+    var candidates = ['vendor/ammo.wasm.js', 'vendor/ammo.js'];
+
+    for (var i = 0; i < candidates.length; i++) {
+      var src = candidates[i];
+      try {
+        await loadScript(src);
+        if (typeof window.Ammo !== 'function') {
+          throw new Error('Ammo factory not exposed by ' + src);
+        }
+
+        var api = await window.Ammo();
+        if (!ensureOfficialAmmo(api)) {
+          throw new Error(src + ' loaded but API is not compatible with this game.');
+        }
+
+        window.__AMMO_RUNTIME__ = api;
+        console.info('[runtime] Loaded official Ammo runtime from ' + src);
+        return;
+      } catch (error) {
+        lastError = error;
+        console.warn('[runtime] Failed candidate:', src, error);
+      }
     }
 
-    try {
-      await loadScript('vendor/ammo.js');
-      console.info('[runtime] Loaded vendor/ammo.js');
-    } catch (err) {
-      await loadScript('vendor/ammo-lite.js');
-      console.warn('[runtime] Fallback: vendor/ammo-lite.js (placeholder runtime).');
-    }
+    throw lastError || new Error('No compatible Ammo runtime found.');
   }
 
   async function boot() {
@@ -50,12 +81,20 @@
     await loadScript('src/game.js');
   }
 
-  boot().catch((error) => {
+  function showFatalError(error) {
     console.error('Runtime bootstrap failed:', error);
-    var el = document.getElementById('overlay');
-    if (el) {
-      el.classList.remove('hidden');
-      el.innerHTML = '<div><h1>Startfehler</h1><p>Runtimes konnten nicht geladen werden.</p></div>';
-    }
-  });
+    var overlay = document.getElementById('overlay');
+    if (!overlay) return;
+
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = [
+      '<div>',
+      '<h1>Startfehler</h1>',
+      '<p>Offizielle Three.js/Ammo.js Runtimes konnten nicht geladen werden.</p>',
+      '<p>Fuehre <code>./scripts/fetch-official-runtimes.sh</code> aus und lade die Seite neu.</p>',
+      '</div>'
+    ].join('');
+  }
+
+  boot().catch(showFatalError);
 })();
