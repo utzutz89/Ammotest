@@ -1,0 +1,156 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# ─────────────────────────────────────────────────────────────
+# CODEX CLI – Projekt-Konfiguration
+# Kopiere diese Datei als config.toml in dein Projekt:
+#   cp .codex/config.toml.example .codex/config.toml
+# ─────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# MODELL KONFIGURATION
+# Codex CLI Modelle: gpt-5.3-codex (Standard), o4-mini, o3
+# model_reasoning_effort: none | minimal | low | medium | high | xhigh
+# ─────────────────────────────────────────────────────────────
+
+model = "gpt-5.3-codex"
+# model_provider = "openai"
+# model_reasoning_effort = "medium"
+
+# ─────────────────────────────────────────────────────────────
+# GENEHMIGUNGEN & SANDBOX
+# approval_policy: "untrusted" | "on-request" | "never"
+# sandbox_mode: "read-only" | "workspace-write" | "danger-full-access"
+# ─────────────────────────────────────────────────────────────
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+
+# ─────────────────────────────────────────────────────────────
+# FEATURES
+# Optionale/experimentelle Funktionen aktivieren
+# ─────────────────────────────────────────────────────────────
+
+[features]
+multi_agent = true
+shell_tool = true
+collaboration_modes = true
+# smart_approvals = true
+# apply_patch_freeform = false
+
+# ─────────────────────────────────────────────────────────────
+# AGENT-ROLLEN (Multi-Agent Orchestrierung)
+# Jede Rolle hat eine Beschreibung und optional eine eigene Config
+# config-Pfade sind relativ zu dieser config.toml
+# ─────────────────────────────────────────────────────────────
+
+[agents]
+max_depth = 2
+max_threads = 3
+
+[agents.orchestrator]
+description = "Haupt-Orchestrator - Zerlegt Aufgaben und delegiert an Spezialisten. Standard-Agent bei jedem Start. Analysiert Keywords, berechnet Komplexität, wählt Agent-Rollen."
+config_file = "agents/orchestrator.toml"
+
+[agents.dev-expert]
+description = "Entwicklungs-Experte für Clean Code, Architektur und Best Practices. Aktivieren bei: code, implementieren, funktion, klasse."
+config_file = "agents/dev-expert.toml"
+
+[agents.test-automator]
+description = "Test-Automatisierer für TDD, Unit Tests und Coverage. Aktivieren bei: test, unittest, coverage."
+config_file = "agents/test-automator.toml"
+
+[agents.debugger]
+description = "Debugger für Fehleranalyse, Bugfixing und Logging. Aktivieren bei: bug, fix, fehler, debug."
+config_file = "agents/debugger.toml"
+
+[agents.code-reviewer]
+description = "Code Reviewer für Qualitätssicherung und Refactoring. Aktivieren bei: review, qualität, refactoring."
+config_file = "agents/code-reviewer.toml"
+
+[agents.ui-ux-designer]
+description = "UI/UX Designer für Frontend, Komponenten und User Experience. Aktivieren bei: ui, gui, komponente, frontend."
+config_file = "agents/ui-ux-designer.toml"
+
+[agents.context-manager]
+description = "Context Manager für Dokumentation und Wissensmanagement. Aktivieren bei: doku, memory, constitution."
+config_file = "agents/context-manager.toml"
+
+[agents.agent-expert]
+description = "Agent Experte für MCP Integration und Workflow-Optimierung. Aktivieren bei: agent, mcp, integration."
+config_file = "agents/agent-expert.toml"
+
+[agents.prompt-engineer]
+description = "Prompt Engineer für Optimierung von Instruktionen. Aktivieren bei: prompt, instruktion, template."
+config_file = "agents/prompt-engineer.toml"
+
+[agents.swift-expert]
+description = "Swift Experte für iOS/macOS Entwicklung. Aktivieren bei: swift, ios, macos, swiftui."
+config_file = "agents/swift-expert.toml"
+
+[agents.doc-maintainer]
+description = "Doku Maintainer für README und CHANGELOG Pflege. Aktivieren bei: readme, changelog, dokumentation."
+config_file = "agents/doc-maintainer.toml"
+
+# ─────────────────────────────────────────────────────────────
+# MCP SERVER
+# Model Context Protocol Server Konfigurationen
+# STDIO: command + args | HTTP: url + bearer_token_env_var
+# Wichtig: Sektion heißt mcp_servers (mit Unterstrich!)
+# ─────────────────────────────────────────────────────────────
+
+# XcodeBuild MCP - iOS/macOS Builds (einkommentieren wenn benötigt)
+# [mcp_servers.xcodebuild]
+# command = "npx"
+# args = ["-y", "@cameroncooke/xcodebuild-mcp"]
+# enabled = true
+
+# Memory MCP - Persistenter Speicher (einkommentieren wenn benötigt)
+# [mcp_servers.memory]
+# command = "npx"
+# args = ["-y", "@anthropic-ai/mcp-server-memory"]
+# enabled = true
+
+# GitHub MCP - Repository Management (einkommentieren wenn benötigt)
+# [mcp_servers.github]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-github"]
+# env = { "GITHUB_PERSONAL_ACCESS_TOKEN" = "ghp_DEIN_TOKEN" }
+# enabled = true
+
+# Context7 MCP - Dokumentations-Suche (Remote)
+# [mcp_servers.context7]
+# command = "npx"
+# args = ["-y", "@upstash/context7-mcp"]
+# enabled = true
+
+# ─────────────────────────────────────────────────────────────
+# PROFILES
+# Benannte Konfigurationssets: codex --profile <name>
+# ─────────────────────────────────────────────────────────────
+
+[profiles.safe]
+model = "gpt-5.3-codex"
+approval_policy = "untrusted"
+sandbox_mode = "read-only"
+
+[profiles.deep-review]
+model = "o3"
+model_reasoning_effort = "xhigh"
+approval_policy = "on-request"
+
+# [profiles.fast]
+# model = "o4-mini"
+# model_reasoning_effort = "low"
+
+# ─────────────────────────────────────────────────────────────
+# PROJEKT-ROOT ERKENNUNG
+# ─────────────────────────────────────────────────────────────
+
+# project_root_markers = [".git"]
+
+# ─────────────────────────────────────────────────────────────
+# AGENTS.MD EINSTELLUNGEN
+# ─────────────────────────────────────────────────────────────
+
+# project_doc_max_bytes = 32768
+# project_doc_fallback_filenames = ["AGENTS.override.md", "AGENTS.md", "TEAM_GUIDE.md", ".agents.md"]
