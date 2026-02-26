@@ -53,6 +53,14 @@ Egal welches Tool, sag einfach:
 
 Wir nutzen **Spec-Driven Development** basierend auf natürlicher Sprache (keine komplexen CLI-Befehle mehr).
 
+### Ammotest-Qualitätsstandard (projektweit)
+
+Für dieses Projekt gilt nach jeder größeren Gameplay-/Grafikänderung verpflichtend:
+
+1. **Starttest**: Spiel starten (`index.html` öffnen, `Enter` drücken)
+2. **Kurzlauf-Test**: kurzer automatisierter Lauf mit Fokus auf Grafikfehler (Flackern/Startfehler)
+3. **Ergebnis-Report**: kurz dokumentieren, ob Start + Grafik stabil sind
+
 ### Die 5 Phasen
 
 ```

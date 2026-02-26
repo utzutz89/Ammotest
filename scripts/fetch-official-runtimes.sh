@@ -50,4 +50,30 @@ for file in three.min.js ammo.wasm.js ammo.wasm.wasm; do
   echo "[ok] $file size: $bytes bytes"
 done
 
+# file:// environments often block XHR for wasm loading.
+# Embed wasm bytes into a small JS helper so ammo can boot without network/file XHR.
+if command -v base64 >/dev/null 2>&1; then
+  b64=$(base64 < "$VENDOR_DIR/ammo.wasm.wasm" | tr -d '\n')
+  cat > "$VENDOR_DIR/ammo.wasm.binary.js" <<EOF
+(function(){
+  var b64 = '$b64';
+  function base64ToU8(base64) {
+    var binary = atob(base64);
+    var length = binary.length;
+    var bytes = new Uint8Array(length);
+    for (var i = 0; i < length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+  window.Module = window.Module || {};
+  if (!window.Module.wasmBinary) {
+    window.Module.wasmBinary = base64ToU8(b64);
+  }
+})();
+EOF
+  js_bytes=$(wc -c < "$VENDOR_DIR/ammo.wasm.binary.js")
+  echo "[ok] ammo.wasm.binary.js size: $js_bytes bytes"
+else
+  echo "[warn] base64 command not found; ammo.wasm.binary.js was not generated."
+fi
+
 echo "[done] official runtimes are in $VENDOR_DIR"

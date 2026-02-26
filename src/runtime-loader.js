@@ -41,24 +41,61 @@
   }
 
   async function loadAmmo() {
-    window.Module = window.Module || {};
-    window.Module.locateFile = function (path) {
-      if (path.endsWith('.wasm')) return 'vendor/' + path;
-      return path;
-    };
-
+    var isFileProtocol = !!(window.location && window.location.protocol === 'file:');
+    var embeddedWasmBinary = null;
     var lastError = null;
-    var candidates = ['vendor/ammo.wasm.js', 'vendor/ammo.js'];
+    var candidates = isFileProtocol
+      ? ['vendor/ammo.js', 'vendor/ammo.wasm.js']
+      : ['vendor/ammo.wasm.js', 'vendor/ammo.js'];
+
+    // Try to preload embedded wasm bytes for file:// startup.
+    if (isFileProtocol) {
+      try {
+        window.Module = window.Module || {};
+        await loadScript('vendor/ammo.wasm.binary.js');
+        if (window.Module && window.Module.wasmBinary) {
+          embeddedWasmBinary = window.Module.wasmBinary;
+          console.info('[runtime] Loaded embedded ammo wasm binary for file:// runtime.');
+        }
+      } catch (inlineError) {
+        console.warn('[runtime] Could not load embedded wasm binary:', inlineError);
+      }
+    }
 
     for (var i = 0; i < candidates.length; i++) {
       var src = candidates[i];
       try {
+        // Reset state between candidates.
+        window.Ammo = undefined;
+        window.Module = {};
+        if (embeddedWasmBinary) {
+          window.Module.wasmBinary = embeddedWasmBinary;
+        }
+        window.Module.locateFile = function (path) {
+          if (path.endsWith('.wasm')) return 'vendor/' + path;
+          return path;
+        };
+
         await loadScript(src);
-        if (typeof window.Ammo !== 'function') {
-          throw new Error('Ammo factory not exposed by ' + src);
+        var api = null;
+        if (typeof window.Ammo === 'function') {
+          api = await Promise.race([
+            window.Ammo(),
+            new Promise(function (_, reject) {
+              window.setTimeout(function () {
+                reject(new Error('Ammo initialization timeout for ' + src));
+              }, 12000);
+            })
+          ]);
+        } else if (ensureOfficialAmmo(window.Ammo)) {
+          api = window.Ammo;
+        } else if (ensureOfficialAmmo(window.Module)) {
+          api = window.Module;
         }
 
-        var api = await window.Ammo();
+        if (!api) {
+          throw new Error('Ammo API not available after loading ' + src);
+        }
         if (!ensureOfficialAmmo(api)) {
           throw new Error(src + ' loaded but API is not compatible with this game.');
         }
@@ -86,11 +123,18 @@
     var overlay = document.getElementById('overlay');
     if (!overlay) return;
 
+    var detail = error && error.message ? error.message : String(error);
+    var fileHint = window.location && window.location.protocol === 'file:'
+      ? '<p><strong>Tipp:</strong> Fuer lokale Datei-Starts nutzt der Loader nun eine eingebettete WASM-Binary. Falls sie fehlt, fuehre das Runtime-Script erneut aus.</p>'
+      : '';
+
     overlay.classList.remove('hidden');
     overlay.innerHTML = [
       '<div>',
       '<h1>Startfehler</h1>',
       '<p>Offizielle Three.js/Ammo.js Runtimes konnten nicht geladen werden.</p>',
+      '<p><code>' + detail + '</code></p>',
+      fileHint,
       '<p>Fuehre <code>./scripts/fetch-official-runtimes.sh</code> aus und lade die Seite neu.</p>',
       '</div>'
     ].join('');
