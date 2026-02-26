@@ -66,10 +66,16 @@
     const ARENA_HALF = 86;
     const dynamicObjects = [];
     const zombies = [];
+    const deadZombies = [];
     const bullets = [];
     const effects = [];
     const decals = [];
     const crates = [];
+    const destructibles = [];
+    const debris = [];
+    const zombieDeathEvents = [];
+    const splatterSurfaces = [];
+    const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
     const textures = createProceduralTextures(renderer, THREE);
     const materials = createMaterials(textures);
@@ -102,6 +108,10 @@
         updateBullets(dt);
         updateEffects(dt);
         updateDecals(dt);
+        updateDebris(dt);
+        updateCorpseBodies(dt);
+        updateZombieDeathEvents(dt);
+        updateHeavyImpactBursts(dt);
         checkProgress();
         updateCamera(dt);
         updateHud();
@@ -195,6 +205,7 @@
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
       scene.add(ground);
+      registerSplatterSurface(ground);
 
       addStaticBox(ARENA_HALF * 2, 2, ARENA_HALF * 2, 0, -1, 0, materials.groundCollider, false);
 
@@ -222,9 +233,34 @@
         if (roll < 0.45) {
           createBreakableCrate(width, height, depth, x, z);
         } else if (roll < 0.8) {
-          addStaticBox(width, height, depth, x, height * 0.5, z, materials.rock);
+          createDestructibleBlock({
+            type: 'rock',
+            width,
+            height,
+            depth,
+            x,
+            z,
+            hp: 70 + Math.random() * 25,
+            mass: 0,
+            material: materials.rock,
+            fragmentMin: 4,
+            fragmentMax: 7
+          });
         } else {
-          addStaticBox(width * 1.2, Math.max(1.6, height * 0.9), depth * 0.9, x, Math.max(1.6, height * 0.9) * 0.5, z, materials.concreteBlock);
+          const blockHeight = Math.max(1.6, height * 0.9);
+          createDestructibleBlock({
+            type: 'concrete',
+            width: width * 1.2,
+            height: blockHeight,
+            depth: depth * 0.9,
+            x,
+            z,
+            hp: 82 + Math.random() * 30,
+            mass: 0,
+            material: materials.concreteBlock,
+            fragmentMin: 5,
+            fragmentMax: 8
+          });
         }
       }
 
@@ -244,12 +280,14 @@
       mainRoad.position.y = 0.03;
       mainRoad.receiveShadow = true;
       scene.add(mainRoad);
+      registerSplatterSurface(mainRoad);
 
       const sideRoad = new THREE.Mesh(new THREE.PlaneGeometry(ARENA_HALF * 2, 22), materials.road);
       sideRoad.rotation.x = -Math.PI / 2;
       sideRoad.position.y = 0.032;
       sideRoad.receiveShadow = true;
       scene.add(sideRoad);
+      registerSplatterSurface(sideRoad);
 
       for (let z = -72; z <= 72; z += 10) {
         const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 4.2), materials.lanePaint);
@@ -294,6 +332,7 @@
       body.castShadow = true;
       body.receiveShadow = true;
       car.add(body);
+      registerSplatterSurface(body);
 
       const hood = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.2), materials.carRust);
       hood.position.set(2.8, 0.05, 0);
@@ -301,11 +340,13 @@
       hood.castShadow = true;
       hood.receiveShadow = true;
       car.add(hood);
+      registerSplatterSurface(hood);
 
       const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.1, 1.9), materials.carWindow);
       cabin.position.set(-0.6, 0.75, 0);
       cabin.castShadow = true;
       car.add(cabin);
+      registerSplatterSurface(cabin);
 
       const tireOffsets = [
         [1.5, -0.58, 1.06],
@@ -321,6 +362,7 @@
         tire.castShadow = true;
         tire.receiveShadow = true;
         car.add(tire);
+        registerSplatterSurface(tire);
       }
 
       addStaticBox(5.0, 1.3, 2.4, x, 0.95, z, materials.invisibleCollider, false);
@@ -332,11 +374,13 @@
       pole.castShadow = true;
       pole.receiveShadow = true;
       scene.add(pole);
+      registerSplatterSurface(pole);
 
       const arm = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.16, 0.16), materials.lampPole);
       arm.position.set(x + (x < 0 ? 0.8 : -0.8), 7.4, z);
       arm.castShadow = true;
       scene.add(arm);
+      registerSplatterSurface(arm);
 
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), materials.lampBulb);
       bulb.position.set(x + (x < 0 ? 1.55 : -1.55), 7.3, z);
@@ -357,6 +401,7 @@
       mesh.castShadow = showMesh;
       mesh.receiveShadow = showMesh;
       scene.add(mesh);
+      if (showMesh) registerSplatterSurface(mesh);
 
       const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(width * 0.5, height * 0.5, depth * 0.5));
       shape.setMargin(0.05);
@@ -364,32 +409,66 @@
     }
 
     function createBreakableCrate(width, height, depth, x, z) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), materials.breakableCrate);
-      mesh.position.set(x, height * 0.5, z);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-
-      const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(width * 0.5, height * 0.5, depth * 0.5));
-      shape.setMargin(0.04);
-      const body = createRigidBody(mesh, shape, 5.8 + Math.random() * 2.2);
-      body.setDamping(0.2, 0.82);
-      body.setFriction(0.88);
-      body.setActivationState(4);
-
-      const crate = {
-        mesh,
-        body,
+      return createDestructibleBlock({
+        type: 'crate',
         width,
         height,
         depth,
-        hp: 68 + Math.random() * 22
+        x,
+        z,
+        hp: 68 + Math.random() * 22,
+        mass: 5.8 + Math.random() * 2.2,
+        material: materials.breakableCrate.clone(),
+        fragmentMin: 6,
+        fragmentMax: 8
+      });
+    }
+
+    function createDestructibleBlock(config) {
+      const materialInstance = config.material && typeof config.material.clone === 'function'
+        ? config.material.clone()
+        : config.material;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(config.width, config.height, config.depth), materialInstance);
+      mesh.position.set(config.x, config.height * 0.5, config.z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      registerSplatterSurface(mesh);
+
+      const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(config.width * 0.5, config.height * 0.5, config.depth * 0.5));
+      shape.setMargin(0.04);
+      const body = createRigidBody(mesh, shape, config.mass || 0);
+      body.setFriction(0.88);
+      body.setActivationState(4);
+      if ((config.mass || 0) > 0) {
+        body.setDamping(0.2, 0.82);
+      }
+
+      const destructible = {
+        type: config.type,
+        mesh,
+        body,
+        width: config.width,
+        height: config.height,
+        depth: config.depth,
+        hp: config.hp,
+        maxHp: config.hp,
+        damaged: false,
+        isDynamic: (config.mass || 0) > 0,
+        fragmentMin: config.fragmentMin || 4,
+        fragmentMax: config.fragmentMax || 8,
+        lastVerticalVelocity: 0,
+        impactCooldown: 0,
+        clusterCooldown: 0
       };
 
-      body.entityRef = crate;
-      body.entityType = 'crate';
-      crates.push(crate);
-      return crate;
+      body.entityRef = destructible;
+      body.entityType = config.type;
+      destructibles.push(destructible);
+      if (config.type === 'crate') {
+        crates.push(destructible);
+      }
+      return destructible;
     }
 
     function createPlayer() {
@@ -497,7 +576,8 @@
         speed: 4.6 + waveLevel * 0.18,
         contactDamage: 8 + waveLevel * 0.45,
         phase: Math.random() * Math.PI * 2,
-        lateral: THREE.MathUtils.randFloat(0.4, 1.0)
+        lateral: THREE.MathUtils.randFloat(0.4, 1.0),
+        hitStagger: 0
       };
 
       body.entityRef = zombie;
@@ -552,7 +632,7 @@
       for (let index = zombies.length - 1; index >= 0; index--) {
         const zombie = zombies[index];
         if (zombie.hp <= 0) {
-          removeZombie(index);
+          triggerZombieDeath(index);
           continue;
         }
 
@@ -566,7 +646,8 @@
         const desiredDir = new THREE.Vector3(desiredX, 0, desiredZ).normalize();
 
         const currentVelocity = zombie.body.getLinearVelocity();
-        const drive = distance > 1.95 ? zombie.speed : 0;
+        const drive = zombie.hitStagger > 0 ? 0 : (distance > 1.95 ? zombie.speed : 0);
+        if (zombie.hitStagger > 0) zombie.hitStagger = Math.max(0, zombie.hitStagger - dt);
         setBodyVelocity(zombie.body, desiredDir.x * drive, currentVelocity.y(), desiredDir.z * drive);
 
         const yaw = Math.atan2(toPlayer.x, toPlayer.z);
@@ -587,6 +668,38 @@
           }
         }
       }
+    }
+
+    function updateCorpseBodies(dt) {
+      for (let index = deadZombies.length - 1; index >= 0; index--) {
+        const corpse = deadZombies[index];
+        corpse.life -= dt;
+
+        if (corpse.life <= corpse.fadeStart) {
+          const fadeT = Math.max(0, corpse.life / corpse.fadeStart);
+          corpse.zombie.root.traverse((node) => {
+            if (!node.isMesh || !node.material) return;
+            node.material.opacity = fadeT;
+          });
+        }
+
+        if (corpse.life <= 0) {
+          removeZombieCorpse(index);
+        }
+      }
+    }
+
+    function removeZombieCorpse(index) {
+      const corpse = deadZombies[index];
+      if (!corpse) return;
+
+      corpse.zombie.root.traverse((node) => {
+        if (!node.isMesh) return;
+        if (node.material && typeof node.material.dispose === 'function') node.material.dispose();
+      });
+
+      removePhysicsObject(corpse.zombie.root, corpse.zombie.body);
+      deadZombies.splice(index, 1);
     }
 
     function shoot() {
@@ -648,6 +761,11 @@
     function updateBullets(dt) {
       for (let bulletIndex = bullets.length - 1; bulletIndex >= 0; bulletIndex--) {
         const bullet = bullets[bulletIndex];
+        const velocity = bullet.body.getLinearVelocity();
+        const velocity2dSq = velocity.x() * velocity.x() + velocity.z() * velocity.z();
+        if (velocity2dSq > 0.02) {
+          bullet.direction.set(velocity.x(), 0, velocity.z()).normalize();
+        }
         bullet.life -= dt;
 
         if (
@@ -671,57 +789,421 @@
 
         if (hitZombieIndex >= 0) {
           const zombie = zombies[hitZombieIndex];
+          const hitPoint = bullet.mesh.position.clone();
           zombie.hp -= bullet.damage;
-          spawnBloodSpray(zombie.root.position, 18, 0.46, 34);
-          spawnBloodDecal(zombie.root.position, 0.28 + Math.random() * 0.28);
+          spawnBloodSpray(hitPoint, THREE.MathUtils.randInt(30, 50), 0.72, 48);
+          spawnBloodMist(hitPoint, THREE.MathUtils.randInt(8, 12));
+          spawnBloodDecal(hitPoint, 0.3 + Math.random() * 0.35);
+          spawnNearbySurfaceBlood(hitPoint, bullet.direction, 5.6);
+          applyZombieHitImpulse(zombie, bullet.direction, 6.4);
           removeBullet(bulletIndex);
 
           if (zombie.hp <= 0) {
             state.score += 130;
-            removeZombie(hitZombieIndex);
+            triggerZombieDeath(hitZombieIndex, bullet.direction, hitPoint);
           }
           continue;
         }
 
-        let hitCrateIndex = -1;
-        for (let crateIndex = crates.length - 1; crateIndex >= 0; crateIndex--) {
-          const crate = crates[crateIndex];
-          const maxDist = Math.max(crate.width, crate.depth) * 0.68 + 0.25;
-          if (bullet.mesh.position.distanceToSquared(crate.mesh.position) <= maxDist * maxDist) {
-            hitCrateIndex = crateIndex;
+        let hitDestructibleIndex = -1;
+        for (let destructibleIndex = destructibles.length - 1; destructibleIndex >= 0; destructibleIndex--) {
+          const destructible = destructibles[destructibleIndex];
+          const maxDist = Math.max(destructible.width, destructible.depth) * 0.68 + 0.28;
+          if (bullet.mesh.position.distanceToSquared(destructible.mesh.position) <= maxDist * maxDist) {
+            hitDestructibleIndex = destructibleIndex;
             break;
           }
         }
 
-        if (hitCrateIndex >= 0) {
-          damageCrate(hitCrateIndex, bullet);
+        if (hitDestructibleIndex >= 0) {
+          damageDestructible(hitDestructibleIndex, bullet);
           removeBullet(bulletIndex);
         }
       }
     }
 
-    function damageCrate(crateIndex, bullet) {
-      const crate = crates[crateIndex];
-      if (!crate) return;
-
-      crate.hp -= bullet.damage * 0.9;
-
-      const currentVelocity = crate.body.getLinearVelocity();
-      const push = 5.5;
+    function applyZombieHitImpulse(zombie, direction, strength) {
+      const force = strength || 6;
+      const currentVelocity = zombie.body.getLinearVelocity();
       setBodyVelocity(
-        crate.body,
-        currentVelocity.x() + bullet.direction.x * push,
-        currentVelocity.y() + 1.2,
-        currentVelocity.z() + bullet.direction.z * push
+        zombie.body,
+        currentVelocity.x() + direction.x * force,
+        Math.max(currentVelocity.y(), 1.8),
+        currentVelocity.z() + direction.z * force
+      );
+      zombie.hitStagger = 0.12 + Math.random() * 0.08;
+    }
+
+    function spawnNearbySurfaceBlood(origin, direction, maxDistance) {
+      const rayOrigin = origin.clone().addScaledVector(direction, 0.06);
+      raycaster.set(rayOrigin, direction.clone().normalize());
+      raycaster.far = maxDistance || 5;
+      const hits = raycaster.intersectObjects(splatterSurfaces, false);
+      if (!hits.length) return;
+
+      const hit = hits[0];
+      const faceNormal = hit.face
+        ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+        : direction.clone().negate();
+      spawnBloodDecalOnSurface(
+        hit.point,
+        faceNormal,
+        0.2 + Math.random() * 0.32,
+        60 + Math.random() * 30
+      );
+    }
+
+    function spawnZombieDeathGore(zombie, direction, hitPoint) {
+      const deathPos = zombie.root.position.clone();
+      if (hitPoint) deathPos.lerp(hitPoint, 0.35);
+
+      spawnBloodSpray(deathPos, THREE.MathUtils.randInt(40, 60), 0.92, 58);
+      spawnBloodMist(deathPos, THREE.MathUtils.randInt(10, 12));
+      spawnGoreBurst(deathPos, direction, THREE.MathUtils.randInt(40, 60));
+
+      const poolCount = THREE.MathUtils.randInt(2, 4);
+      for (let i = 0; i < poolCount; i++) {
+        const offset = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1.6),
+          0,
+          THREE.MathUtils.randFloatSpread(1.6)
+        );
+        const poolPos = deathPos.clone().add(offset);
+        spawnBloodDecal(poolPos, 0.4 + Math.random() * 0.8);
+      }
+
+      const ringCount = THREE.MathUtils.randInt(5, 8);
+      for (let i = 0; i < ringCount; i++) {
+        const angle = (i / ringCount) * Math.PI * 2 + Math.random() * 0.4;
+        const radius = THREE.MathUtils.randFloat(1.5, 3.0);
+        const ringPos = deathPos.clone().add(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        spawnBloodDecal(ringPos, 0.18 + Math.random() * 0.24);
+      }
+
+      spawnOrganChunks(deathPos, direction, THREE.MathUtils.randInt(3, 5));
+      spawnNearbySurfaceBlood(deathPos, direction.clone().normalize(), 6.2);
+      spawnNearbySurfaceBlood(deathPos, direction.clone().negate(), 4.2);
+    }
+
+    function spawnGoreBurst(origin, direction, count) {
+      const burstCount = count || 48;
+      for (let i = 0; i < burstCount; i++) {
+        const useDisc = Math.random() < 0.32;
+        const scale = useDisc
+          ? THREE.MathUtils.randFloat(0.08, 0.22)
+          : THREE.MathUtils.randFloat(0.05, 0.14);
+        const geometry = useDisc
+          ? new THREE.CircleGeometry(scale, 7)
+          : new THREE.SphereGeometry(scale, 6, 6);
+        const material = new THREE.MeshBasicMaterial({
+          color: useDisc ? 0x7e1010 : 0x8c1212,
+          transparent: true,
+          opacity: 1,
+          side: THREE.DoubleSide
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(origin);
+        mesh.position.y += THREE.MathUtils.randFloat(0.15, 1.4);
+        mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        scene.add(mesh);
+
+        const spread = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          Math.random() * 1.1 + 0.2,
+          THREE.MathUtils.randFloatSpread(1)
+        );
+        spread.addScaledVector(direction, 0.45 + Math.random() * 0.8);
+        const velocity = spread.normalize().multiplyScalar(38 + Math.random() * 36);
+
+        effects.push({
+          mesh,
+          velocity,
+          life: 0.5 + Math.random() * 0.7,
+          fade: 2.2,
+          gravity: 24,
+          spin: new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(11),
+            THREE.MathUtils.randFloatSpread(11),
+            THREE.MathUtils.randFloatSpread(11)
+          )
+        });
+      }
+    }
+
+    function spawnOrganChunks(origin, direction, count) {
+      for (let i = 0; i < count; i++) {
+        const isSphere = Math.random() < 0.5;
+        const geometry = isSphere
+          ? new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 8, 6)
+          : new THREE.BoxGeometry(
+            0.18 + Math.random() * 0.22,
+            0.14 + Math.random() * 0.18,
+            0.14 + Math.random() * 0.2
+          );
+        const mesh = new THREE.Mesh(geometry, materials.organChunk.clone());
+        mesh.position.copy(origin);
+        mesh.position.y += 0.25 + Math.random() * 0.8;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        const throwDir = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          Math.random() * 0.8 + 0.25,
+          THREE.MathUtils.randFloatSpread(1)
+        ).addScaledVector(direction, 0.6).normalize();
+        const velocity = throwDir.multiplyScalar(18 + Math.random() * 12);
+
+        effects.push({
+          mesh,
+          velocity,
+          life: 2.2 + Math.random() * 1.4,
+          fade: 0.52,
+          gravity: 21,
+          floorY: 0.12,
+          settle: true,
+          spin: new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(8),
+            THREE.MathUtils.randFloatSpread(8),
+            THREE.MathUtils.randFloatSpread(8)
+          )
+        });
+      }
+    }
+
+    function damageDestructible(destructibleIndex, bullet) {
+      const destructible = destructibles[destructibleIndex];
+      if (!destructible) return;
+
+      const damageMul = destructible.type === 'crate' ? 0.9 : 0.75;
+      destructible.hp -= bullet.damage * damageMul;
+
+      if (destructible.isDynamic) {
+        const currentVelocity = destructible.body.getLinearVelocity();
+        const push = destructible.type === 'crate' ? 5.5 : 3.8;
+        setBodyVelocity(
+          destructible.body,
+          currentVelocity.x() + bullet.direction.x * push,
+          currentVelocity.y() + 1.2,
+          currentVelocity.z() + bullet.direction.z * push
+        );
+      }
+
+      if (destructible.type === 'crate') {
+        applyCrateDamageVisual(destructible);
+        spawnWoodSplinters(destructible.mesh.position, 10, 0.42, 20);
+      } else {
+        spawnSparkBurst(destructible.mesh.position.clone(), 0xb7aea1, 7, 0.18, 16);
+      }
+
+      if (destructible.hp <= 0) {
+        state.score += destructible.type === 'crate' ? 20 : 12;
+        destroyDestructible(destructibleIndex, bullet.direction);
+      }
+    }
+
+    function applyCrateDamageVisual(crate) {
+      if (!crate || !crate.mesh || !crate.mesh.material || !crate.mesh.material.color) return;
+      crate.damaged = true;
+      const remaining = Math.max(0, crate.hp / crate.maxHp);
+      const damageT = 1 - remaining;
+      const color = crate.mesh.material.color;
+      color.setRGB(
+        0.41 - damageT * 0.19,
+        0.29 - damageT * 0.16,
+        0.18 - damageT * 0.12
+      );
+      crate.mesh.material.roughness = 0.8 + damageT * 0.16;
+    }
+
+    function destroyDestructible(destructibleIndex, direction, options) {
+      const destructible = destructibles[destructibleIndex];
+      if (!destructible) return;
+      const opts = options || {};
+      const hitDirection = direction ? direction.clone().normalize() : new THREE.Vector3(
+        THREE.MathUtils.randFloatSpread(1),
+        0.1,
+        THREE.MathUtils.randFloatSpread(1)
+      ).normalize();
+
+      const fragmentCount = THREE.MathUtils.randInt(destructible.fragmentMin, destructible.fragmentMax);
+      spawnDestructionFragments(destructible, hitDirection, fragmentCount);
+
+      if (destructible.type === 'crate') {
+        spawnWoodSplinters(destructible.mesh.position, 24, 0.62, 34);
+      } else {
+        spawnSparkBurst(destructible.mesh.position.clone(), 0xc7bba4, 10, 0.24, 20);
+      }
+
+      if (opts.clusterExplosion) {
+        spawnSparkBurst(destructible.mesh.position.clone(), 0xffb65c, 18, 0.35, 30);
+        applyRadialImpulse(destructible.mesh.position.clone(), 4.0, 12, 5);
+      }
+
+      removeDestructibleByRef(destructible);
+    }
+
+    function spawnDestructionFragments(destructible, direction, count) {
+      const basePos = destructible.mesh.position.clone();
+      for (let i = 0; i < count; i++) {
+        const scaleX = Math.max(0.14, destructible.width * THREE.MathUtils.randFloat(0.12, 0.25));
+        const scaleY = Math.max(0.1, destructible.height * THREE.MathUtils.randFloat(0.08, 0.2));
+        const scaleZ = Math.max(0.14, destructible.depth * THREE.MathUtils.randFloat(0.12, 0.26));
+        const geometry = new THREE.BoxGeometry(scaleX, scaleY, scaleZ);
+
+        let material;
+        if (destructible.type === 'crate') {
+          material = new THREE.MeshStandardMaterial({ color: 0x6f4a2d, roughness: 0.88, metalness: 0.03, transparent: true, opacity: 1 });
+        } else if (destructible.type === 'rock') {
+          material = new THREE.MeshStandardMaterial({ color: 0x4a4d55, roughness: 0.95, metalness: 0.02, transparent: true, opacity: 1 });
+        } else {
+          material = new THREE.MeshStandardMaterial({ color: 0x747982, roughness: 0.92, metalness: 0.04, transparent: true, opacity: 1 });
+        }
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.copy(basePos);
+        mesh.position.add(new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(destructible.width * 0.45),
+          THREE.MathUtils.randFloat(0.1, destructible.height * 0.7),
+          THREE.MathUtils.randFloatSpread(destructible.depth * 0.45)
+        ));
+        mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(scaleX * 0.5, scaleY * 0.5, scaleZ * 0.5));
+        shape.setMargin(0.02);
+        const fragmentMass = THREE.MathUtils.randFloat(0.3, 1.2);
+        const body = createRigidBody(mesh, shape, fragmentMass);
+        body.setFriction(0.84);
+        body.setDamping(0.16, 0.62);
+        body.setActivationState(4);
+
+        const velocity = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          Math.random() * 0.9 + 0.25,
+          THREE.MathUtils.randFloatSpread(1)
+        );
+        velocity.addScaledVector(direction, 1.1 + Math.random() * 1.7).normalize();
+        velocity.multiplyScalar(12 + Math.random() * 16);
+        setBodyVelocity(body, velocity.x, velocity.y, velocity.z);
+
+        const angular = new AmmoLib.btVector3(
+          THREE.MathUtils.randFloatSpread(14),
+          THREE.MathUtils.randFloatSpread(14),
+          THREE.MathUtils.randFloatSpread(14)
+        );
+        body.setAngularVelocity(angular);
+        AmmoLib.destroy(angular);
+
+        const life = 3 + Math.random() * 2;
+        debris.push({
+          mesh,
+          body,
+          life,
+          totalLife: life,
+          floorY: 0.1,
+          lastVerticalVelocity: velocity.y,
+          impactCooldown: 0.2
+        });
+      }
+    }
+
+    function applyRadialImpulse(origin, radius, strength, upwardBoost) {
+      for (let i = 0; i < dynamicObjects.length; i++) {
+        const object = dynamicObjects[i];
+        const body = object.userData.physicsBody;
+        if (!body) continue;
+
+        const delta = new THREE.Vector3().subVectors(object.position, origin);
+        const dist = delta.length();
+        if (dist < 0.001 || dist > radius) continue;
+
+        const falloff = 1 - dist / radius;
+        delta.multiplyScalar(1 / dist);
+        const impulse = (strength || 10) * falloff;
+        const currentVelocity = body.getLinearVelocity();
+        setBodyVelocity(
+          body,
+          currentVelocity.x() + delta.x * impulse,
+          currentVelocity.y() + (upwardBoost || 3.5) * falloff,
+          currentVelocity.z() + delta.z * impulse
+        );
+      }
+    }
+
+    function removeDestructibleByRef(destructible) {
+      if (!destructible) return;
+
+      const destructibleIndex = destructibles.indexOf(destructible);
+      if (destructibleIndex >= 0) destructibles.splice(destructibleIndex, 1);
+
+      const crateIndex = crates.indexOf(destructible);
+      if (crateIndex >= 0) crates.splice(crateIndex, 1);
+
+      const surfaceIndex = splatterSurfaces.indexOf(destructible.mesh);
+      if (surfaceIndex >= 0) splatterSurfaces.splice(surfaceIndex, 1);
+
+      if (destructible.mesh.material && typeof destructible.mesh.material.dispose === 'function') {
+        destructible.mesh.material.dispose();
+      }
+      removePhysicsObject(destructible.mesh, destructible.body);
+    }
+
+    function triggerZombieDeath(zombieIndex, direction, hitPoint) {
+      const zombie = zombies[zombieIndex];
+      if (!zombie || zombie.isDying) return;
+      zombie.isDying = true;
+
+      const deathDir = direction
+        ? direction.clone().normalize()
+        : new THREE.Vector3(THREE.MathUtils.randFloatSpread(1), 0, THREE.MathUtils.randFloatSpread(1)).normalize();
+
+      spawnZombieDeathGore(zombie, deathDir, hitPoint || zombie.root.position.clone());
+      registerZombieDeath(zombie.root.position.clone());
+
+      const angularFactor = new AmmoLib.btVector3(1, 1, 1);
+      zombie.body.setAngularFactor(angularFactor);
+      AmmoLib.destroy(angularFactor);
+      zombie.body.setDamping(0.16, 0.38);
+      zombie.body.setActivationState(4);
+
+      const currentVelocity = zombie.body.getLinearVelocity();
+      setBodyVelocity(
+        zombie.body,
+        currentVelocity.x() + deathDir.x * 8.5,
+        -6 - Math.random() * 3.5,
+        currentVelocity.z() + deathDir.z * 8.5
       );
 
-      spawnWoodSplinters(crate.mesh.position, 10, 0.42, 20);
+      const angular = new AmmoLib.btVector3(
+        THREE.MathUtils.randFloatSpread(9),
+        THREE.MathUtils.randFloatSpread(9),
+        THREE.MathUtils.randFloatSpread(9)
+      );
+      zombie.body.setAngularVelocity(angular);
+      AmmoLib.destroy(angular);
 
-      if (crate.hp <= 0) {
-        state.score += 20;
-        spawnWoodSplinters(crate.mesh.position, 24, 0.62, 34);
-        removeCrate(crateIndex);
-      }
+      makeZombieMaterialsFadeable(zombie.root);
+
+      const corpseLife = 1.5 + Math.random();
+      deadZombies.push({
+        zombie,
+        life: corpseLife,
+        totalLife: corpseLife,
+        fadeStart: 0.8
+      });
+      zombies.splice(zombieIndex, 1);
+    }
+
+    function makeZombieMaterialsFadeable(root) {
+      root.traverse((node) => {
+        if (!node.isMesh || !node.material) return;
+        node.material = node.material.clone();
+        node.material.transparent = true;
+        node.material.opacity = 1;
+      });
     }
 
     function checkProgress() {
@@ -736,19 +1218,45 @@
       for (let index = effects.length - 1; index >= 0; index--) {
         const effect = effects[index];
         effect.life -= dt;
+        const lifeT = effect.totalLife ? Math.max(0, effect.life / effect.totalLife) : 0;
 
-        if (effect.gravity) {
+        if (effect.gravity && !effect.settled) {
           effect.velocity.y -= effect.gravity * dt;
         }
+        if (effect.drag) {
+          const damping = Math.max(0, 1 - effect.drag * dt);
+          effect.velocity.multiplyScalar(damping);
+        }
 
-        effect.mesh.position.addScaledVector(effect.velocity, dt);
+        if (!effect.settled) effect.mesh.position.addScaledVector(effect.velocity, dt);
+        if (effect.spin) {
+          effect.mesh.rotation.x += effect.spin.x * dt;
+          effect.mesh.rotation.y += effect.spin.y * dt;
+          effect.mesh.rotation.z += effect.spin.z * dt;
+        }
+        if (effect.shrink) {
+          const s = Math.max(0.08, lifeT);
+          effect.mesh.scale.setScalar(s);
+        }
+        if (effect.floorY !== undefined && effect.mesh.position.y <= effect.floorY) {
+          effect.mesh.position.y = effect.floorY;
+          if (effect.settle) {
+            effect.velocity.set(0, 0, 0);
+            effect.gravity = 0;
+            effect.spin = null;
+            effect.settled = true;
+          }
+        }
         if (effect.mesh.material && 'opacity' in effect.mesh.material) {
-          effect.mesh.material.opacity = Math.max(0, effect.life * effect.fade);
+          if (effect.totalLife) {
+            effect.mesh.material.opacity = Math.max(0, (effect.baseOpacity || 1) * lifeT);
+          } else {
+            effect.mesh.material.opacity = Math.max(0, effect.life * effect.fade);
+          }
         }
 
         if (effect.life <= 0) {
-          scene.remove(effect.mesh);
-          effects.splice(index, 1);
+          removeEffect(index);
         }
       }
     }
@@ -762,10 +1270,116 @@
         decal.mesh.material.opacity = Math.max(0, t * 0.72);
 
         if (decal.life <= 0) {
-          scene.remove(decal.mesh);
-          decals.splice(index, 1);
+          removeDecal(index);
         }
       }
+    }
+
+    function updateDebris(dt) {
+      for (let index = debris.length - 1; index >= 0; index--) {
+        const piece = debris[index];
+        piece.life -= dt;
+        piece.impactCooldown -= dt;
+
+        const velocity = piece.body.getLinearVelocity();
+        const vy = velocity.y();
+        if (
+          piece.impactCooldown <= 0 &&
+          piece.lastVerticalVelocity < -3.5 &&
+          vy > -1.1 &&
+          piece.mesh.position.y <= 1.05
+        ) {
+          spawnDustBurst(piece.mesh.position.clone(), THREE.MathUtils.randInt(6, 10));
+          piece.impactCooldown = 0.28;
+        }
+        piece.lastVerticalVelocity = vy;
+
+        if (piece.life <= 1.0) {
+          const opacity = Math.max(0, piece.life / 1.0);
+          if (piece.mesh.material && 'opacity' in piece.mesh.material) {
+            piece.mesh.material.opacity = opacity;
+          }
+        }
+
+        if (piece.life <= 0) {
+          removeDebris(index);
+        }
+      }
+    }
+
+    function updateZombieDeathEvents(dt) {
+      for (let index = zombieDeathEvents.length - 1; index >= 0; index--) {
+        zombieDeathEvents[index].life -= dt;
+        if (zombieDeathEvents[index].life <= 0) zombieDeathEvents.splice(index, 1);
+      }
+
+      for (let index = crates.length - 1; index >= 0; index--) {
+        const crate = crates[index];
+        if (!crate) continue;
+        crate.clusterCooldown = Math.max(0, (crate.clusterCooldown || 0) - dt);
+        if (crate.clusterCooldown > 0) continue;
+
+        const clusterCount = countZombieDeathsNear(crate.mesh.position, 4.0);
+        if (clusterCount >= 3) {
+          crate.clusterCooldown = 1.2;
+          const destructibleIndex = destructibles.indexOf(crate);
+          if (destructibleIndex >= 0) {
+            destroyDestructible(
+              destructibleIndex,
+              new THREE.Vector3(THREE.MathUtils.randFloatSpread(1), 0, THREE.MathUtils.randFloatSpread(1)).normalize(),
+              { clusterExplosion: true }
+            );
+          }
+        }
+      }
+    }
+
+    function countZombieDeathsNear(position, radius) {
+      const radiusSq = radius * radius;
+      let count = 0;
+      for (let index = 0; index < zombieDeathEvents.length; index++) {
+        if (zombieDeathEvents[index].position.distanceToSquared(position) <= radiusSq) count++;
+      }
+      return count;
+    }
+
+    function updateHeavyImpactBursts(dt) {
+      for (let index = 0; index < destructibles.length; index++) {
+        const destructible = destructibles[index];
+        if (!destructible.isDynamic) continue;
+        destructible.impactCooldown = Math.max(0, destructible.impactCooldown - dt);
+
+        const velocity = destructible.body.getLinearVelocity();
+        const vy = velocity.y();
+        if (
+          destructible.impactCooldown <= 0 &&
+          destructible.lastVerticalVelocity < -3.5 &&
+          vy > -1.1 &&
+          destructible.mesh.position.y <= (destructible.height * 0.5 + 0.4)
+        ) {
+          spawnDustBurst(destructible.mesh.position.clone(), THREE.MathUtils.randInt(6, 10));
+          destructible.impactCooldown = 0.32;
+        }
+        destructible.lastVerticalVelocity = vy;
+      }
+    }
+
+    function registerZombieDeath(position) {
+      zombieDeathEvents.push({ position: position.clone(), life: 1.1 });
+      if (zombieDeathEvents.length > 40) zombieDeathEvents.splice(0, zombieDeathEvents.length - 40);
+    }
+
+    function removeDebris(index) {
+      const piece = debris[index];
+      if (!piece) return;
+      removePhysicsObject(piece.mesh, piece.body);
+      if (piece.mesh.material && typeof piece.mesh.material.dispose === 'function') {
+        piece.mesh.material.dispose();
+      }
+      if (piece.mesh.geometry && typeof piece.mesh.geometry.dispose === 'function') {
+        piece.mesh.geometry.dispose();
+      }
+      debris.splice(index, 1);
     }
 
     function spawnSparkBurst(origin, color, count, life, speed) {
@@ -787,9 +1401,40 @@
       }
     }
 
+    function spawnDustBurst(origin, count) {
+      for (let i = 0; i < count; i++) {
+        const size = 0.06 + Math.random() * 0.1;
+        const mesh = new THREE.Mesh(
+          new THREE.SphereGeometry(size, 6, 6),
+          new THREE.MeshBasicMaterial({ color: 0xc8b89a, transparent: true, opacity: 0.84 })
+        );
+        mesh.position.copy(origin);
+        mesh.position.y = Math.max(0.12, origin.y * 0.4);
+        scene.add(mesh);
+
+        const velocity = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          Math.random() * 0.8 + 0.18,
+          THREE.MathUtils.randFloatSpread(1)
+        ).normalize().multiplyScalar(6 + Math.random() * 8);
+
+        const totalLife = 0.24 + Math.random() * 0.3;
+        effects.push({
+          mesh,
+          velocity,
+          life: totalLife,
+          totalLife,
+          baseOpacity: 0.8,
+          gravity: 12,
+          drag: 3.1,
+          shrink: true
+        });
+      }
+    }
+
     function spawnBloodSpray(origin, count, life, speed) {
       for (let i = 0; i < count; i++) {
-        const size = 0.06 + Math.random() * 0.09;
+        const size = 0.05 + Math.random() * 0.13;
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(size, 6, 6),
           new THREE.MeshBasicMaterial({ color: 0x8c1212, transparent: true, opacity: 1 })
@@ -800,11 +1445,52 @@
 
         const velocity = new THREE.Vector3(
           THREE.MathUtils.randFloatSpread(1),
-          Math.random() * 0.9 + 0.2,
+          Math.random() * 1.1 + 0.16,
           THREE.MathUtils.randFloatSpread(1)
-        ).normalize().multiplyScalar(speed * (0.45 + Math.random() * 0.85));
+        ).normalize().multiplyScalar(speed * (0.4 + Math.random() * 1.2));
 
-        effects.push({ mesh, velocity, life: life * (0.7 + Math.random() * 1.1), fade: 2.4, gravity: 21 });
+        const totalLife = life * (0.7 + Math.random() * 1.1);
+        effects.push({
+          mesh,
+          velocity,
+          life: totalLife,
+          totalLife,
+          baseOpacity: 1,
+          fade: 2.4,
+          gravity: 22,
+          drag: 0.16
+        });
+      }
+    }
+
+    function spawnBloodMist(origin, count) {
+      for (let i = 0; i < count; i++) {
+        const size = 0.02 + Math.random() * 0.04;
+        const mesh = new THREE.Mesh(
+          new THREE.SphereGeometry(size, 5, 5),
+          new THREE.MeshBasicMaterial({ color: 0xaa1a1a, transparent: true, opacity: 0.92 })
+        );
+        mesh.position.copy(origin);
+        mesh.position.y += Math.random() * 0.7;
+        scene.add(mesh);
+
+        const velocity = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          Math.random() * 0.8,
+          THREE.MathUtils.randFloatSpread(1)
+        ).multiplyScalar(6 + Math.random() * 10);
+
+        const totalLife = 0.08 + Math.random() * 0.12;
+        effects.push({
+          mesh,
+          velocity,
+          life: totalLife,
+          totalLife,
+          baseOpacity: 0.9,
+          gravity: 12,
+          drag: 3.6,
+          shrink: true
+        });
       }
     }
 
@@ -825,20 +1511,81 @@
           THREE.MathUtils.randFloatSpread(1)
         ).normalize().multiplyScalar(speed * (0.55 + Math.random() * 0.8));
 
-        effects.push({ mesh, velocity, life: life * (0.75 + Math.random() * 0.9), fade: 1.8, gravity: 22 });
+        const totalLife = life * (0.75 + Math.random() * 0.9);
+        effects.push({
+          mesh,
+          velocity,
+          life: totalLife,
+          totalLife,
+          baseOpacity: 1,
+          fade: 1.8,
+          gravity: 22,
+          drag: 0.18
+        });
       }
     }
 
     function spawnBloodDecal(origin, scaleMul) {
+      const position = new THREE.Vector3(origin.x, 0.08, origin.z);
+      const life = 60 + Math.random() * 30;
+      spawnBloodDecalOnSurface(position, WORLD_UP, scaleMul, life);
+    }
+
+    function spawnBloodDecalOnSurface(position, normal, scaleMul, lifeSeconds) {
+      enforceDecalLimit(80);
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(1.2 * scaleMul, 1.2 * scaleMul),
         materials.bloodDecal.clone()
       );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.rotation.z = Math.random() * Math.PI * 2;
-      mesh.position.set(origin.x, 0.08, origin.z);
+      const n = normal ? normal.clone().normalize() : WORLD_UP.clone();
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+      mesh.rotateZ(Math.random() * Math.PI * 2);
+
+      const targetY = Math.abs(n.y) > 0.72 ? Math.max(0.08, position.y || 0.08) : (position.y || 0.08);
+      mesh.position.set(position.x, targetY, position.z);
+      mesh.position.addScaledVector(n, 0.03);
       scene.add(mesh);
-      decals.push({ mesh, life: 24 + Math.random() * 18, totalLife: 24 + Math.random() * 18 });
+      const totalLife = lifeSeconds || (60 + Math.random() * 30);
+      decals.push({ mesh, life: totalLife, totalLife });
+    }
+
+    function enforceDecalLimit(maxCount) {
+      const maxDecals = maxCount || 80;
+      while (decals.length >= maxDecals) {
+        removeDecal(0);
+      }
+    }
+
+    function removeDecal(index) {
+      const decal = decals[index];
+      if (!decal) return;
+      scene.remove(decal.mesh);
+      if (decal.mesh.material && typeof decal.mesh.material.dispose === 'function') {
+        decal.mesh.material.dispose();
+      }
+      if (decal.mesh.geometry && typeof decal.mesh.geometry.dispose === 'function') {
+        decal.mesh.geometry.dispose();
+      }
+      decals.splice(index, 1);
+    }
+
+    function removeEffect(index) {
+      const effect = effects[index];
+      if (!effect) return;
+      scene.remove(effect.mesh);
+      if (effect.mesh.material && typeof effect.mesh.material.dispose === 'function') {
+        effect.mesh.material.dispose();
+      }
+      if (effect.mesh.geometry && typeof effect.mesh.geometry.dispose === 'function') {
+        effect.mesh.geometry.dispose();
+      }
+      effects.splice(index, 1);
+    }
+
+    function registerSplatterSurface(mesh) {
+      if (!mesh || !mesh.isMesh) return;
+      if (splatterSurfaces.indexOf(mesh) >= 0) return;
+      splatterSurfaces.push(mesh);
     }
 
     function syncDynamicObjects() {
@@ -898,13 +1645,18 @@
       bullets.splice(index, 1);
     }
 
-    function removeZombie(index) {
+    function removeZombie(index, options) {
       const zombie = zombies[index];
       if (!zombie) return;
 
-      spawnBloodSpray(zombie.root.position, 26, 0.75, 42);
-      for (let i = 0; i < 3; i++) {
-        spawnBloodDecal(zombie.root.position, 0.35 + Math.random() * 0.45);
+      const opts = options || {};
+      if (!opts.skipGore) {
+        const randomDir = new THREE.Vector3(
+          THREE.MathUtils.randFloatSpread(1),
+          0,
+          THREE.MathUtils.randFloatSpread(1)
+        ).normalize();
+        spawnZombieDeathGore(zombie, randomDir, zombie.root.position.clone());
       }
 
       removePhysicsObject(zombie.root, zombie.body);
@@ -914,8 +1666,7 @@
     function removeCrate(index) {
       const crate = crates[index];
       if (!crate) return;
-      removePhysicsObject(crate.mesh, crate.body);
-      crates.splice(index, 1);
+      removeDestructibleByRef(crate);
     }
 
     function removePhysicsObject(object, body) {
@@ -1214,6 +1965,7 @@
         zombieLimb: new THREE.MeshStandardMaterial({ map: textures.zombieSkin, roughness: 0.8, metalness: 0.03 }),
 
         bullet: new THREE.MeshStandardMaterial({ color: 0xffdf8a, emissive: 0xffa023, emissiveIntensity: 1.3, roughness: 0.2, metalness: 0.7 }),
+        organChunk: new THREE.MeshStandardMaterial({ color: 0x4f1a1a, roughness: 0.9, metalness: 0.02 }),
         bloodDecal: new THREE.MeshStandardMaterial({
           map: textures.blood,
           color: 0x8d1111,

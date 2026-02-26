@@ -8,6 +8,11 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - zerstoerbare Holzkisten mit Physikreaktion und Splinter-Effekt
 - Zombie-Wellen mit Treffer-Splatter, Blutpartikeln und Boden-Splats
 - realistischere Urban-Map (Strassenkreuzung, Gehwege, Lampen, Wracks, Schmutzlayer)
+- erweitertes Gore-System (Hit-Mist, Surface-Splatter, starke Death-Bursts, Organ-Chunks)
+- ragdoll-aehnliches Zombie-Sterben (kurz liegen bleiben, ausfaden, dann cleanup)
+- Objekt-Destruktion fuer Kisten/Stein/Beton mit physikalischen Fragmenten
+- Impact-Staubbursts bei schweren Bodenaufprallen (Kisten + Truemmer)
+- Cluster-Mechanik: Kisten explodieren bei 3+ Zombie-Toden im Radius
 
 ## Runtimes herunterladen
 
@@ -51,4 +56,4 @@ Das Spiel laeuft ohne Build-Prozess und ohne lokalen Webserver.
 Nach groesseren Gameplay-/Grafikaenderungen wird standardmaessig geprueft:
 
 1. Starttest (`index.html` oeffnen, `Enter` pruefen)
-2. kurzer Laufzeittest auf Grafikfehler (Flackern/Startfehler) mit Browser-Automation
+2. kurzer Laufzeittest (ca. 5s) auf Grafikfehler (Flackern/Startfehler) mit Browser-Automation

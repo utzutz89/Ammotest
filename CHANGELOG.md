@@ -12,6 +12,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added zombie enemy archetype with shamble motion, melee pressure, and gore/splatter feedback.
 - Added destructible wooden crates with physics reaction and splinter debris.
 - Added realistic map pass (asphalt roads, sidewalks, street lamps, wrecked cars, grime overlays).
+- Expanded hit gore: denser blood spray, blood mist, near-surface blood splats, and zombie hit impulse stagger.
+- Expanded death gore: heavy burst mix (droplets + discs), blood pools, radial splatter ring, and optional organ chunks.
+- Extended blood decal persistence to 60-90s and capped active decals at 80 (oldest-first cleanup).
+- Added ragdoll-like zombie death handling: death impulse, short corpse persistence (1.5-2.5s), fade-out, then cleanup.
+- Added destructible rock/concrete props with HP and physical fragment breakup on destruction.
+- Upgraded crate destruction: first-hit visual damage state and 6-8 physical wood fragments on break.
+- Added heavy-impact dust bursts for dynamic heavy objects and debris when slamming into the ground.
+- Added crate cluster-explosion mechanic when 3+ zombie deaths happen within radius 4.0 (radial impulse + sparks).
+- Standardized short browser QA run to ~5 seconds for start/gfx smoke checks.
 
 ### Changed
 - Filled AGENTS project placeholders (name, goal, and main features).
