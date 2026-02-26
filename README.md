@@ -11,16 +11,34 @@ Aktuell enthält das Repo **Fallback-Dateien**:
 - `vendor/three-lite.min.js`
 - `vendor/ammo-lite.js`
 
-Diese sind nur Platzhalter-Runtimes, damit das Spiel in dieser eingeschränkten Umgebung startbar bleibt.
+Diese sind nur Platzhalter-Runtimes, damit das Spiel in eingeschränkten Umgebungen startbar bleibt.
 
-## Echte lokale Bundles verwenden (empfohlen)
+## Offizielle lokale Bundles herunterladen (empfohlen)
 
-Lege die offiziellen Dateien zusätzlich in `vendor/` ab:
+Ich habe ein Script ergänzt, das offizielle Builds in `vendor/` ablegt:
 
-- `vendor/three.min.js` (offizielle, große Build-Datei)
-- `vendor/ammo.js` (offizielle Ammo.js-Build)
+```bash
+./scripts/fetch-official-runtimes.sh
+```
 
-Der Loader (`src/runtime-loader.js`) lädt automatisch zuerst die offiziellen Dateien und nutzt nur bei Fehlschlag die `*-lite`-Fallbacks.
+Es lädt (in dieser Reihenfolge mit Mirror-Fallbacks):
+
+- `vendor/three.min.js`
+- `vendor/ammo.wasm.js`
+- `vendor/ammo.wasm.wasm`
+- optional `vendor/ammo.js`
+
+> Hinweis: In dieser Container-Umgebung können externe Downloads per Proxy mit `403 Forbidden` blockiert werden.
+
+## Loader-Reihenfolge
+
+`src/runtime-loader.js` lädt automatisch:
+
+1. `vendor/three.min.js`, sonst `vendor/three-lite.min.js`
+2. `vendor/ammo.wasm.js`, sonst `vendor/ammo.js`, sonst `vendor/ammo-lite.js`
+3. danach `src/game.js`
+
+Damit nutzt das Projekt automatisch echte lokale Runtimes, sobald sie vorhanden sind.
 
 ## Start
 
