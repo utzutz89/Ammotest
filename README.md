@@ -13,6 +13,10 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - Objekt-Destruktion fuer Kisten/Stein/Beton mit physikalischen Fragmenten
 - Impact-Staubbursts bei schweren Bodenaufprallen (Kisten + Truemmer)
 - Cluster-Mechanik: Kisten explodieren bei 3+ Zombie-Toden im Radius
+- mehrere Waffen (Pistole/Shotgun/SMG), Weapon-Pickups und eigener Ammo-Pool pro Waffe
+- Zombie-Typen (Normal/Runner/Brute) mit Wave-abhängiger Verteilung
+- Upgrade-Auswahl zwischen Wellen, Combo-/Streak-Score, Heal-/Ammo-Drops
+- Post-Processing Pipeline (SSAO, Vignette, FXAA) mit Fallback auf direkten Renderer
 
 ## Runtimes herunterladen
 
@@ -27,6 +31,8 @@ Das Script legt offizielle Bundles in `vendor/` ab:
 - `vendor/ammo.wasm.wasm`
 - `vendor/ammo.js` (Fallback)
 - `vendor/ammo.wasm.binary.js` (eingebettete WASM-Binary fuer `file://`)
+- `vendor/postprocessing/*.js` (EffectComposer + Shader/Pässe)
+- `vendor/textures/tex_*.js` (ambientcg 1K Base64-Textursets)
 
 ## Loader-Verhalten
 
@@ -46,6 +52,7 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 - `Maus`: zielen
 - `Linksklick halten`: feuern
 - `R`: nachladen
+- `1/2/3` oder Mausrad: Waffen wechseln
 
 ## Hinweis
 

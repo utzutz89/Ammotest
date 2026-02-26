@@ -10,8 +10,11 @@
     <div id="hud">
       <div><strong>Leben:</strong> <span id="health">100</span></div>
       <div><strong>Punkte:</strong> <span id="score">0</span></div>
+      <div><strong>Highscore:</strong> <span id="highscore">0</span></div>
       <div><strong>Welle:</strong> <span id="wave">1</span></div>
-      <div><strong>Munition:</strong> <span id="ammo">32</span> / <span id="reserve">128</span></div>
+      <div><strong>Waffe:</strong> <span id="weapon">Pistole</span></div>
+      <div><strong>Munition:</strong> <span id="ammo">12</span> / <span id="reserve">48</span></div>
+      <div><strong>Combo:</strong> <span id="combo">x1</span></div>
       <div class="hint">WASD bewegen · Maus zielen · Linksklick schießen · R nachladen · Shift sprinten</div>
     </div>
     <div id="overlay">
@@ -19,7 +22,39 @@
       <p>Drücke <strong>Enter</strong>, um zu starten.</p>
     </div>
     <div id="crosshair" aria-hidden="true"></div>
+    <div id="hit-flash" aria-hidden="true"></div>
+    <div id="floating-score-layer" aria-hidden="true"></div>
 
-    <script src="src/runtime-loader.js?v=20260226-3"></script>
+    <script>
+      // Textur-Dateien optional laden (Fallback auf Canvas-Texturen wenn nicht vorhanden)
+      (function() {
+        var sets = ['asphalt','concrete','wood_crate','metal_plate','rock_wall','ground_dirt'];
+        sets.forEach(function(name) {
+          var s = document.createElement('script');
+          s.src = 'vendor/textures/tex_' + name + '.js';
+          s.onerror = function() {
+            console.warn('[textures] ' + name + ' nicht gefunden, Canvas-Fallback aktiv.');
+          };
+          document.head.appendChild(s);
+        });
+      })();
+    </script>
+
+    <script>
+      window.__POSTPROCESSING_SCRIPTS__ = [
+        'vendor/postprocessing/Pass.js',
+        'vendor/postprocessing/EffectComposer.js',
+        'vendor/postprocessing/RenderPass.js',
+        'vendor/postprocessing/ShaderPass.js',
+        'vendor/postprocessing/SimplexNoise.js',
+        'vendor/postprocessing/SSAOShader.js',
+        'vendor/postprocessing/SSAOPass.js',
+        'vendor/postprocessing/CopyShader.js',
+        'vendor/postprocessing/VignetteShader.js',
+        'vendor/postprocessing/FXAAShader.js'
+      ];
+    </script>
+
+    <script src="src/runtime-loader.js?v=20260226-4"></script>
   </body>
 </html>

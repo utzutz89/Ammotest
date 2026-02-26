@@ -40,6 +40,20 @@
     console.info('[runtime] Loaded official Three.js runtime.');
   }
 
+  async function loadOptionalPostprocessing() {
+    var scripts = Array.isArray(window.__POSTPROCESSING_SCRIPTS__) ? window.__POSTPROCESSING_SCRIPTS__ : [];
+    if (!scripts.length) return;
+
+    for (var i = 0; i < scripts.length; i++) {
+      var src = scripts[i];
+      try {
+        await loadScript(src);
+      } catch (error) {
+        console.warn('[runtime] Optional postprocessing script could not be loaded:', src, error);
+      }
+    }
+  }
+
   async function loadAmmo() {
     var isFileProtocol = !!(window.location && window.location.protocol === 'file:');
     var embeddedWasmBinary = null;
@@ -114,6 +128,7 @@
 
   async function boot() {
     await loadThree();
+    await loadOptionalPostprocessing();
     await loadAmmo();
     await loadScript('src/game.js');
   }

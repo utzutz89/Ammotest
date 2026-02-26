@@ -23,8 +23,8 @@
     document.body.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x8ca0b5);
-    scene.fog = new THREE.Fog(0x8ca0b5, 45, 240);
+    scene.background = new THREE.Color(0x6a7a8a);
+    scene.fog = new THREE.Fog(0x6a7a8a, 35, 180);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.35, 360);
     const cameraAnchor = new THREE.Vector3(0, 0, 0);
@@ -41,25 +41,64 @@
 
     const state = {
       running: false,
+      upgradeMode: false,
       keys: {},
       mouseNdc: new THREE.Vector2(0, 0),
       mouseDown: false,
       aimDirection: new THREE.Vector3(0, 0, 1),
+      maxHealth: 100,
       health: 100,
       score: 0,
+      highScore: Math.max(0, Number(window.localStorage.getItem('ammotest_highscore') || 0)),
       wave: 1,
-      ammo: 32,
-      reserve: 128,
+      weaponKey: 'pistol',
+      reloadDelayMs: 1050,
+      damageMul: 1,
+      moveSpeedMul: 1,
+      fireRateMul: 1,
       reloading: false,
-      lastShotMs: 0
+      lastShotMs: 0,
+      comboMultiplier: 1,
+      comboTimer: 0,
+      comboPulse: 0,
+      lastKillMs: 0,
+      killStreak: 0,
+      spreeText: '',
+      spreeTimer: 0,
+      shakePower: 0,
+      hitFlash: 0,
+      canStartNextWave: false,
+      waveInProgress: true,
+      weapons: {
+        pistol: { unlocked: true, ammo: 12, reserve: 48 },
+        shotgun: { unlocked: false, ammo: 0, reserve: 0 },
+        smg: { unlocked: false, ammo: 0, reserve: 0 }
+      }
+    };
+
+    const weaponDefs = {
+      pistol: { label: 'Pistole', damage: 34, cooldown: 92, magazine: 12, spreadDeg: 0, pellets: 1 },
+      shotgun: { label: 'Shotgun', damage: 18, cooldown: 680, magazine: 6, spreadDeg: 18, pellets: 6 },
+      smg: { label: 'SMG', damage: 18, cooldown: 55, magazine: 32, spreadDeg: 4, pellets: 1 }
+    };
+
+    const zombieTypeDefs = {
+      normal: { hpMul: 1.0, speedMul: 1.0, damageMul: 1.0, scale: 1.0, score: 130 },
+      brute: { hpMul: 2.8, speedMul: 0.6, damageMul: 2.2, scale: 1.5, score: 350 },
+      runner: { hpMul: 0.5, speedMul: 2.2, damageMul: 0.7, scale: 0.75, score: 80 }
     };
 
     const hud = {
       health: document.getElementById('health'),
       score: document.getElementById('score'),
+      highscore: document.getElementById('highscore'),
       wave: document.getElementById('wave'),
+      weapon: document.getElementById('weapon'),
       ammo: document.getElementById('ammo'),
       reserve: document.getElementById('reserve'),
+      combo: document.getElementById('combo'),
+      hitFlash: document.getElementById('hit-flash'),
+      floatingLayer: document.getElementById('floating-score-layer'),
       overlay: document.getElementById('overlay')
     };
 
@@ -76,9 +115,21 @@
     const zombieDeathEvents = [];
     const splatterSurfaces = [];
     const WORLD_UP = new THREE.Vector3(0, 1, 0);
+    const transientLights = [];
+    const weaponPickups = [];
+    const itemDrops = [];
+    const floatingScores = [];
+    const crateSpawnPoints = [];
+    const laneSpawnPoints = [
+      new THREE.Vector3(-52, 1.1, -6),
+      new THREE.Vector3(-52, 1.1, 18),
+      new THREE.Vector3(52, 1.1, -18),
+      new THREE.Vector3(52, 1.1, 7)
+    ];
 
     const textures = createProceduralTextures(renderer, THREE);
     const materials = createMaterials(textures);
+    const postfx = initPostProcessing();
 
     const lightRig = setupLighting(scene);
     buildArena();
@@ -92,6 +143,7 @@
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mousedown', () => { state.mouseDown = true; });
     window.addEventListener('mouseup', () => { state.mouseDown = false; });
+    window.addEventListener('wheel', onWheel, { passive: true });
     window.addEventListener('contextmenu', (event) => event.preventDefault());
 
     const clock = new THREE.Clock();
@@ -112,14 +164,25 @@
         updateCorpseBodies(dt);
         updateZombieDeathEvents(dt);
         updateHeavyImpactBursts(dt);
+        updateWeaponPickups(dt);
+        updateItemDrops(dt);
+        updateFloatingScores(dt);
+        updateComboAndStreak(dt);
+        updatePlayerFeedback(dt);
+        updateTransientLights(dt);
         checkProgress();
         updateCamera(dt);
         updateHud();
       } else {
         updateIdleCamera();
+        updateFloatingScores(dt);
       }
 
-      renderer.render(scene, camera);
+      if (postfx && postfx.composer) {
+        postfx.composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
       requestAnimationFrame(loop);
     }
 
@@ -127,18 +190,30 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      if (postfx && postfx.composer) {
+        postfx.composer.setSize(window.innerWidth, window.innerHeight);
+        if (postfx.ssaoPass && typeof postfx.ssaoPass.setSize === 'function') {
+          postfx.ssaoPass.setSize(window.innerWidth, window.innerHeight);
+        }
+        if (postfx.fxaaPass && postfx.fxaaPass.material && postfx.fxaaPass.material.uniforms && postfx.fxaaPass.material.uniforms.resolution) {
+          postfx.fxaaPass.material.uniforms.resolution.value.set(1 / window.innerWidth, 1 / window.innerHeight);
+        }
+      }
     }
 
     function onKeyDown(event) {
       const key = event.key.toLowerCase();
       state.keys[key] = true;
 
-      if (!state.running && event.key === 'Enter') {
+      if (!state.running && !state.upgradeMode && event.key === 'Enter') {
         state.running = true;
         hud.overlay.classList.add('hidden');
       }
 
       if (key === 'r') reload();
+      if (key === '1') switchWeapon('pistol');
+      if (key === '2') switchWeapon('shotgun');
+      if (key === '3') switchWeapon('smg');
     }
 
     function onKeyUp(event) {
@@ -150,6 +225,20 @@
       state.mouseNdc.y = -(event.clientY / window.innerHeight) * 2 + 1;
     }
 
+    function onWheel(event) {
+      const order = ['pistol', 'shotgun', 'smg'];
+      const currentIndex = order.indexOf(state.weaponKey);
+      const direction = event.deltaY > 0 ? 1 : -1;
+      for (let i = 1; i <= order.length; i++) {
+        const idx = (currentIndex + direction * i + order.length) % order.length;
+        const key = order[idx];
+        if (state.weapons[key].unlocked) {
+          switchWeapon(key);
+          break;
+        }
+      }
+    }
+
     function updateIdleCamera() {
       const t = performance.now() * 0.0002;
       camera.position.set(Math.cos(t) * 28, 36, Math.sin(t) * 28);
@@ -159,6 +248,11 @@
     function updateCamera(dt) {
       cameraTarget.copy(player.root.position);
       const desired = new THREE.Vector3(cameraTarget.x, 45, cameraTarget.z + 28);
+      if (state.shakePower > 0.001) {
+        desired.x += THREE.MathUtils.randFloatSpread(state.shakePower);
+        desired.y += THREE.MathUtils.randFloatSpread(state.shakePower * 0.6);
+        desired.z += THREE.MathUtils.randFloatSpread(state.shakePower);
+      }
       cameraAnchor.lerp(desired, 1 - Math.exp(-dt * 7));
       camera.position.copy(cameraAnchor);
       camera.lookAt(cameraTarget.x, 1.2, cameraTarget.z);
@@ -167,7 +261,7 @@
     }
 
     function setupLighting(sceneRef) {
-      const hemi = new THREE.HemisphereLight(0xb9d5f2, 0x2f221c, 0.46);
+      const hemi = new THREE.HemisphereLight(0xb9d5f2, 0x1a1208, 0.46);
       sceneRef.add(hemi);
 
       const sun = new THREE.DirectionalLight(0xfff3de, 2.1);
@@ -195,6 +289,94 @@
       sceneRef.add(warmBack);
 
       return { sun };
+    }
+
+    function initPostProcessing() {
+      if (
+        !THREE.Pass ||
+        !THREE.EffectComposer ||
+        !THREE.RenderPass ||
+        !THREE.SSAOPass ||
+        !THREE.ShaderPass ||
+        !THREE.SSAOShader ||
+        !THREE.SimplexNoise ||
+        !THREE.FXAAShader ||
+        !THREE.VignetteShader
+      ) {
+        console.warn('[postfx] EffectComposer-Pipeline nicht vollständig verfügbar, fallback auf renderer.render');
+        return null;
+      }
+
+      const composer = new THREE.EffectComposer(renderer);
+      const renderPass = new THREE.RenderPass(scene, camera);
+      composer.addPass(renderPass);
+
+      const ssaoPass = new THREE.SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+      ssaoPass.kernelRadius = 0.18;
+      ssaoPass.minDistance = 0.002;
+      ssaoPass.maxDistance = 0.06;
+      composer.addPass(ssaoPass);
+
+      const vignettePass = new THREE.ShaderPass(THREE.VignetteShader);
+      if (vignettePass.uniforms.offset) vignettePass.uniforms.offset.value = 0.9;
+      if (vignettePass.uniforms.darkness) vignettePass.uniforms.darkness.value = 0.45;
+      composer.addPass(vignettePass);
+
+      const fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+      if (fxaaPass.material && fxaaPass.material.uniforms && fxaaPass.material.uniforms.resolution) {
+        fxaaPass.material.uniforms.resolution.value.set(1 / window.innerWidth, 1 / window.innerHeight);
+      }
+      composer.addPass(fxaaPass);
+
+      return { composer, ssaoPass, fxaaPass };
+    }
+
+    function spawnTransientPointLight(color, intensity, distance, position, duration) {
+      const light = new THREE.PointLight(color, intensity, distance, 2);
+      light.position.copy(position);
+      scene.add(light);
+      transientLights.push({
+        light,
+        life: duration,
+        totalLife: duration,
+        baseIntensity: intensity
+      });
+    }
+
+    function updateTransientLights(dt) {
+      for (let i = transientLights.length - 1; i >= 0; i--) {
+        const item = transientLights[i];
+        item.life -= dt;
+        const t = Math.max(0, item.life / item.totalLife);
+        item.light.intensity = item.baseIntensity * t;
+        if (item.life <= 0) {
+          scene.remove(item.light);
+          transientLights.splice(i, 1);
+        }
+      }
+    }
+
+    function createLampHaloSprite() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+      gradient.addColorStop(0, 'rgba(255, 216, 160, 0.95)');
+      gradient.addColorStop(0.4, 'rgba(255, 198, 120, 0.32)');
+      gradient.addColorStop(1, 'rgba(255, 170, 80, 0.0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 128, 128);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      return new THREE.Sprite(material);
     }
 
     function buildArena() {
@@ -272,6 +454,8 @@
       addStreetLamp(-46, 26);
       addStreetLamp(48, -22);
       addStreetLamp(48, 14);
+
+      spawnWeaponPickups();
     }
 
     function buildRoadNetwork() {
@@ -388,9 +572,58 @@
 
       const glow = new THREE.PointLight(0xffd59b, 0.58, 22, 2);
       glow.position.copy(bulb.position);
+      glow.castShadow = true;
+      glow.shadow.mapSize.set(512, 512);
+      glow.shadow.camera.near = 0.4;
+      glow.shadow.camera.far = 26;
       scene.add(glow);
 
+      const halo = createLampHaloSprite();
+      halo.position.copy(bulb.position);
+      halo.position.y += 0.02;
+      halo.scale.set(4.4, 4.4, 1);
+      scene.add(halo);
+
       addStaticBox(0.8, 8.0, 0.8, x, 4.0, z, materials.invisibleCollider, false);
+    }
+
+    function spawnWeaponPickups() {
+      createWeaponPickup('shotgun', -34, 28, 0x7cc7ff);
+      createWeaponPickup('smg', 30, -34, 0xffcc68);
+    }
+
+    function createWeaponPickup(weaponKey, x, z, color) {
+      const group = new THREE.Group();
+      group.position.set(x, 0.95, z);
+
+      const core = new THREE.Mesh(
+        new THREE.BoxGeometry(0.62, 0.22, 1.4),
+        new THREE.MeshStandardMaterial({
+          color: color,
+          emissive: color,
+          emissiveIntensity: 0.9,
+          roughness: 0.2,
+          metalness: 0.8
+        })
+      );
+      core.castShadow = true;
+      core.receiveShadow = true;
+      group.add(core);
+
+      const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 10, 8),
+        new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.25 })
+      );
+      group.add(halo);
+
+      scene.add(group);
+      weaponPickups.push({
+        weaponKey,
+        group,
+        core,
+        halo,
+        life: Infinity
+      });
     }
 
     function addStaticBox(width, height, depth, x, y, z, material, visible) {
@@ -408,7 +641,10 @@
       createRigidBody(mesh, shape, 0);
     }
 
-    function createBreakableCrate(width, height, depth, x, z) {
+    function createBreakableCrate(width, height, depth, x, z, recordSpawn) {
+      if (recordSpawn !== false) {
+        crateSpawnPoints.push({ width, height, depth, x, z });
+      }
       return createDestructibleBlock({
         type: 'crate',
         width,
@@ -524,39 +760,78 @@
       };
     }
 
-    function createZombie(positionX, positionZ, waveLevel) {
+    function createZombie(positionX, positionZ, waveLevel, zombieType) {
+      const typeKey = zombieType || 'normal';
+      const type = zombieTypeDefs[typeKey] || zombieTypeDefs.normal;
       const root = new THREE.Group();
       root.position.set(positionX, 1.06, positionZ);
+      root.scale.setScalar(type.scale);
       scene.add(root);
 
-      const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 1.08, 2.2, 14), materials.zombieBody);
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.4, 0.65), materials.zombieBody);
+      torso.position.y = 0.42;
       torso.castShadow = true;
       torso.receiveShadow = true;
       root.add(torso);
 
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 16, 14), materials.zombieHead);
-      head.position.y = 1.2;
+      const hip = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.5, 0.58), materials.zombieCloth);
+      hip.position.y = -0.58;
+      hip.castShadow = true;
+      hip.receiveShadow = true;
+      root.add(hip);
+
+      const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.28, 8), materials.zombieLimb);
+      neck.position.y = 1.3;
+      neck.castShadow = true;
+      root.add(neck);
+
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.68, 0.62), materials.zombieHead);
+      head.position.y = 1.78;
       head.castShadow = true;
       root.add(head);
 
       const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.34), materials.zombieJaw);
-      jaw.position.set(0, 0.84, 0.56);
+      jaw.position.set(0, 1.52, 0.42);
       jaw.castShadow = true;
       root.add(jaw);
 
-      const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.1, 0.28), materials.zombieLimb);
-      leftArm.position.set(-0.9, 0.36, 0.15);
-      leftArm.castShadow = true;
-      root.add(leftArm);
+      const leftUpperArm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.7, 0.28), materials.zombieLimb);
+      leftUpperArm.position.set(-0.78, 0.56, 0.18);
+      leftUpperArm.rotation.x = 0.6;
+      leftUpperArm.castShadow = true;
+      root.add(leftUpperArm);
 
-      const rightArm = leftArm.clone();
-      rightArm.position.x = 0.9;
-      root.add(rightArm);
+      const rightUpperArm = leftUpperArm.clone();
+      rightUpperArm.position.x = 0.78;
+      root.add(rightUpperArm);
 
-      const tornCloth = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.66, 1.1), materials.zombieCloth);
-      tornCloth.position.set(0, -0.35, 0.05);
-      tornCloth.castShadow = true;
-      root.add(tornCloth);
+      const leftLowerArm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.6, 0.22), materials.zombieLimb);
+      leftLowerArm.position.set(-0.78, 0.02, 0.46);
+      leftLowerArm.rotation.x = 0.45;
+      leftLowerArm.castShadow = true;
+      root.add(leftLowerArm);
+
+      const rightLowerArm = leftLowerArm.clone();
+      rightLowerArm.position.x = 0.78;
+      root.add(rightLowerArm);
+
+      const leftThigh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.7, 0.32), materials.zombieLimb);
+      leftThigh.position.set(-0.28, -1.02, 0.04);
+      leftThigh.castShadow = true;
+      root.add(leftThigh);
+
+      const rightThigh = leftThigh.clone();
+      rightThigh.position.x = 0.28;
+      root.add(rightThigh);
+
+      const leftShin = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.65, 0.26), materials.zombieLimb);
+      leftShin.position.set(-0.28, -1.66, 0.06);
+      leftShin.castShadow = true;
+      root.add(leftShin);
+
+      const rightShin = leftShin.clone();
+      rightShin.position.x = 0.28;
+      root.add(rightShin);
 
       const shape = new AmmoLib.btSphereShape(1.0);
       shape.setMargin(0.05);
@@ -570,11 +845,19 @@
         root,
         body,
         torso,
-        leftArm,
-        rightArm,
-        hp: 78 + waveLevel * 12,
-        speed: 4.6 + waveLevel * 0.18,
-        contactDamage: 8 + waveLevel * 0.45,
+        leftUpperArm,
+        rightUpperArm,
+        leftLowerArm,
+        rightLowerArm,
+        leftThigh,
+        rightThigh,
+        leftShin,
+        rightShin,
+        type: typeKey,
+        hp: (78 + waveLevel * 12) * type.hpMul,
+        speed: (4.6 + waveLevel * 0.18) * type.speedMul,
+        contactDamage: (8 + waveLevel * 0.45) * type.damageMul,
+        scoreValue: type.score,
         phase: Math.random() * Math.PI * 2,
         lateral: THREE.MathUtils.randFloat(0.4, 1.0),
         hitStagger: 0
@@ -586,17 +869,44 @@
       return zombie;
     }
 
+    function getZombieTypeForWave(waveLevel) {
+      if (waveLevel <= 2) return 'normal';
+      const roll = Math.random();
+      if (waveLevel >= 5 && roll < 0.15) return 'brute';
+      if (waveLevel >= 3 && roll < (waveLevel >= 5 ? 0.35 : 0.2)) return 'runner';
+      return 'normal';
+    }
+
     function spawnWave(waveLevel) {
       const amount = Math.min(8 + waveLevel * 3, 54);
       const ringRadius = Math.min(70, 44 + waveLevel * 2.4);
+      const laneSpawnCount = waveLevel >= 4 ? Math.floor(amount * 0.2) : 0;
+      const safeRadius = 22;
+      const safeRadiusSq = safeRadius * safeRadius;
 
       for (let index = 0; index < amount; index++) {
-        const angle = (index / amount) * Math.PI * 2 + Math.random() * 0.45;
-        const radius = ringRadius + Math.random() * 20;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
-        createZombie(x, z, waveLevel);
+        let x;
+        let z;
+        if (index < laneSpawnCount) {
+          const lane = laneSpawnPoints[index % laneSpawnPoints.length];
+          x = lane.x + THREE.MathUtils.randFloatSpread(4.8);
+          z = lane.z + THREE.MathUtils.randFloatSpread(4.8);
+        } else {
+          const angle = (index / amount) * Math.PI * 2 + Math.random() * 0.45;
+          const radius = ringRadius + Math.random() * 20;
+          x = Math.cos(angle) * radius;
+          z = Math.sin(angle) * radius;
+        }
+
+        let guard = 0;
+        while ((x * x + z * z) < safeRadiusSq && guard < 8) {
+          x += THREE.MathUtils.randFloatSpread(6);
+          z += THREE.MathUtils.randFloatSpread(6);
+          guard++;
+        }
+        createZombie(x, z, waveLevel, getZombieTypeForWave(waveLevel));
       }
+      state.waveInProgress = true;
     }
 
     function updatePlayer(dt) {
@@ -607,7 +917,8 @@
       if (state.keys.d) movement.x += 1;
       if (movement.lengthSq() > 0) movement.normalize();
 
-      const speed = state.keys.shift ? player.sprintSpeed : player.moveSpeed;
+      const speedBase = state.keys.shift ? player.sprintSpeed : player.moveSpeed;
+      const speed = speedBase * state.moveSpeedMul;
       const currentVelocity = player.body.getLinearVelocity();
       setBodyVelocity(player.body, movement.x * speed, currentVelocity.y(), movement.z * speed);
 
@@ -655,12 +966,20 @@
         zombie.root.rotation.y = yaw + sway;
         zombie.root.rotation.z = sway * 0.3;
 
-        const armSwing = Math.sin(now * 8 + zombie.phase) * 0.8;
-        zombie.leftArm.rotation.x = armSwing;
-        zombie.rightArm.rotation.x = -armSwing * 0.85;
+        const gait = Math.sin(now * 6.6 + zombie.phase) * 0.56;
+        zombie.leftUpperArm.rotation.x = 0.6 - gait * 1.12;
+        zombie.rightUpperArm.rotation.x = 0.6 + gait * 1.12;
+        zombie.leftLowerArm.rotation.x = 0.45 - gait * 0.65;
+        zombie.rightLowerArm.rotation.x = 0.45 + gait * 0.65;
+        zombie.leftThigh.rotation.x = gait * 0.95;
+        zombie.rightThigh.rotation.x = -gait * 0.95;
+        zombie.leftShin.rotation.x = -gait * 0.72;
+        zombie.rightShin.rotation.x = gait * 0.72;
 
         if (distance < 1.8) {
           state.health -= zombie.contactDamage * dt;
+          state.hitFlash = Math.min(1, state.hitFlash + dt * 3.2);
+          addCameraShake(0.12 * dt * 12);
           if (state.health <= 0) {
             state.health = 0;
             endGame();
@@ -703,59 +1022,82 @@
     }
 
     function shoot() {
-      if (!state.running || state.reloading || state.ammo <= 0) return;
-
+      if (!state.running || state.reloading) return;
+      const weapon = weaponDefs[state.weaponKey];
+      const weaponState = state.weapons[state.weaponKey];
+      if (!weapon || !weaponState || weaponState.ammo <= 0) return;
       const now = performance.now();
-      if (now - state.lastShotMs < 92) return;
+      const cooldownMs = weapon.cooldown * (1 / state.fireRateMul);
+      if (now - state.lastShotMs < cooldownMs) return;
       state.lastShotMs = now;
-      state.ammo -= 1;
+      weaponState.ammo -= 1;
 
       const origin = player.root.position.clone().addScaledVector(state.aimDirection, 2.2);
       origin.y = 1.34;
+      spawnTransientPointLight(0xffa040, 3.5, 12, origin.clone(), 0.055);
+      addCameraShake(weapon.pellets > 1 ? 0.18 : 0.1);
 
-      const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), materials.bullet);
-      bulletMesh.position.copy(origin);
-      bulletMesh.castShadow = true;
-      scene.add(bulletMesh);
+      for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+        const bulletDirection = applySpreadToDirection(state.aimDirection, weapon.spreadDeg);
+        const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), materials.bullet);
+        bulletMesh.position.copy(origin);
+        bulletMesh.castShadow = true;
+        scene.add(bulletMesh);
 
-      const shape = new AmmoLib.btSphereShape(0.22);
-      shape.setMargin(0.02);
-      const body = createRigidBody(bulletMesh, shape, 0.24);
-      body.setFriction(0.02);
-      body.setRestitution(0.05);
-      body.setCcdMotionThreshold(0.03);
-      body.setCcdSweptSphereRadius(0.18);
+        const shape = new AmmoLib.btSphereShape(0.22);
+        shape.setMargin(0.02);
+        const body = createRigidBody(bulletMesh, shape, 0.24);
+        body.setFriction(0.02);
+        body.setRestitution(0.05);
+        body.setCcdMotionThreshold(0.03);
+        body.setCcdSweptSphereRadius(0.18);
 
-      const bulletSpeed = 80;
-      setBodyVelocity(body, state.aimDirection.x * bulletSpeed, 0, state.aimDirection.z * bulletSpeed);
+        const bulletSpeed = 80;
+        setBodyVelocity(body, bulletDirection.x * bulletSpeed, 0, bulletDirection.z * bulletSpeed);
 
-      const bullet = {
-        mesh: bulletMesh,
-        body,
-        life: 1.35,
-        damage: 34,
-        direction: state.aimDirection.clone()
-      };
-      body.entityRef = bullet;
-      body.entityType = 'bullet';
-      bullets.push(bullet);
+        const bullet = {
+          mesh: bulletMesh,
+          body,
+          life: 1.35,
+          damage: weapon.damage * state.damageMul,
+          direction: bulletDirection.clone()
+        };
+        body.entityRef = bullet;
+        body.entityType = 'bullet';
+        bullets.push(bullet);
+      }
 
-      spawnSparkBurst(origin, 0xffc670, 8, 0.22, 26);
+      spawnSparkBurst(origin, 0xffc670, weapon.pellets > 1 ? 13 : 8, 0.22, weapon.pellets > 1 ? 31 : 26);
     }
 
     function reload() {
-      if (state.reloading || state.ammo >= 32 || state.reserve <= 0) return;
+      const weapon = weaponDefs[state.weaponKey];
+      const weaponState = state.weapons[state.weaponKey];
+      if (!weapon || !weaponState) return;
+      if (state.reloading || weaponState.ammo >= weapon.magazine || weaponState.reserve <= 0) return;
 
       state.reloading = true;
       updateHud();
       window.setTimeout(() => {
-        const needed = 32 - state.ammo;
-        const taken = Math.min(needed, state.reserve);
-        state.ammo += taken;
-        state.reserve -= taken;
+        const needed = weapon.magazine - weaponState.ammo;
+        const taken = Math.min(needed, weaponState.reserve);
+        weaponState.ammo += taken;
+        weaponState.reserve -= taken;
         state.reloading = false;
         updateHud();
-      }, 1050);
+      }, Math.max(300, state.reloadDelayMs));
+    }
+
+    function applySpreadToDirection(direction, spreadDeg) {
+      if (!spreadDeg) return direction.clone();
+      const angle = THREE.MathUtils.degToRad(THREE.MathUtils.randFloatSpread(spreadDeg));
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      return new THREE.Vector3(
+        direction.x * c - direction.z * s,
+        0,
+        direction.x * s + direction.z * c
+      ).normalize();
     }
 
     function updateBullets(dt) {
@@ -799,7 +1141,7 @@
           removeBullet(bulletIndex);
 
           if (zombie.hp <= 0) {
-            state.score += 130;
+            onZombieKilled(zombie, hitPoint);
             triggerZombieDeath(hitZombieIndex, bullet.direction, hitPoint);
           }
           continue;
@@ -1155,6 +1497,7 @@
       const zombie = zombies[zombieIndex];
       if (!zombie || zombie.isDying) return;
       zombie.isDying = true;
+      if (!zombie.scored) onZombieKilled(zombie, hitPoint || zombie.root.position.clone());
 
       const deathDir = direction
         ? direction.clone().normalize()
@@ -1162,6 +1505,7 @@
 
       spawnZombieDeathGore(zombie, deathDir, hitPoint || zombie.root.position.clone());
       registerZombieDeath(zombie.root.position.clone());
+      spawnTransientPointLight(0xff1010, 2.0, 8, zombie.root.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 0.12);
 
       const angularFactor = new AmmoLib.btVector3(1, 1, 1);
       zombie.body.setAngularFactor(angularFactor);
@@ -1207,10 +1551,94 @@
     }
 
     function checkProgress() {
-      if (zombies.length === 0) {
-        state.wave += 1;
-        state.reserve += 28;
-        spawnWave(state.wave);
+      if (!state.running || state.upgradeMode) return;
+      if (zombies.length === 0 && deadZombies.length === 0 && state.waveInProgress) {
+        state.waveInProgress = false;
+        openUpgradeOverlay();
+      }
+    }
+
+    function openUpgradeOverlay() {
+      state.running = false;
+      state.upgradeMode = true;
+      const options = pickUpgradeOptions(3);
+      const title = '<h1>Welle ' + state.wave + ' geschafft</h1><p>Wähle ein Upgrade:</p>';
+      const buttons = options.map((opt, index) =>
+        '<button class="upgrade-btn" data-upgrade="' + opt.id + '">' + (index + 1) + '. ' + opt.label + '</button>'
+      ).join('');
+      hud.overlay.classList.remove('hidden');
+      hud.overlay.innerHTML = '<div>' + title + '<div class="upgrade-list">' + buttons + '</div></div>';
+
+      const buttonNodes = hud.overlay.querySelectorAll('.upgrade-btn');
+      buttonNodes.forEach((node) => {
+        node.addEventListener('click', () => {
+          const id = node.getAttribute('data-upgrade');
+          applyUpgradeById(id);
+          startNextWave();
+        }, { once: true });
+      });
+    }
+
+    function pickUpgradeOptions(count) {
+      const all = [
+        { id: 'damage', label: 'Mehr Schaden (+20%)' },
+        { id: 'speed', label: 'Mehr Speed (+15%)' },
+        { id: 'max_hp', label: 'Max HP +25' },
+        { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
+        { id: 'reserve', label: 'Mehr Reserve (+50%)' },
+        { id: 'firerate', label: 'Feuerrate +15%' }
+      ];
+      const chosen = [];
+      const pool = all.slice();
+      while (chosen.length < count && pool.length) {
+        const idx = Math.floor(Math.random() * pool.length);
+        chosen.push(pool[idx]);
+        pool.splice(idx, 1);
+      }
+      return chosen;
+    }
+
+    function applyUpgradeById(id) {
+      if (id === 'damage') state.damageMul *= 1.2;
+      if (id === 'speed') state.moveSpeedMul *= 1.15;
+      if (id === 'max_hp') {
+        state.maxHealth += 25;
+        state.health = Math.min(state.maxHealth, state.health + 25);
+      }
+      if (id === 'reload') state.reloadDelayMs = Math.max(300, state.reloadDelayMs - 200);
+      if (id === 'reserve') {
+        const current = state.weapons[state.weaponKey];
+        current.reserve = Math.round(current.reserve * 1.5);
+      }
+      if (id === 'firerate') state.fireRateMul *= 1.15;
+    }
+
+    function startNextWave() {
+      state.upgradeMode = false;
+      state.wave += 1;
+      respawnCratesForWave(state.wave);
+      const currentWeapon = state.weapons[state.weaponKey];
+      currentWeapon.reserve += 18;
+      spawnWave(state.wave);
+      hud.overlay.classList.add('hidden');
+      state.running = true;
+    }
+
+    function respawnCratesForWave(waveLevel) {
+      if (waveLevel % 3 !== 0) return;
+      for (let i = 0; i < crateSpawnPoints.length; i++) {
+        const spawn = crateSpawnPoints[i];
+        let occupied = false;
+        for (let j = 0; j < crates.length; j++) {
+          const existing = crates[j];
+          if (existing.mesh.position.distanceToSquared(new THREE.Vector3(spawn.x, existing.mesh.position.y, spawn.z)) < 3.2 * 3.2) {
+            occupied = true;
+            break;
+          }
+        }
+        if (!occupied) {
+          createBreakableCrate(spawn.width, spawn.height, spawn.depth, spawn.x, spawn.z, false);
+        }
       }
     }
 
@@ -1330,6 +1758,214 @@
               { clusterExplosion: true }
             );
           }
+        }
+      }
+    }
+
+    function getCurrentWeaponDef() {
+      return weaponDefs[state.weaponKey];
+    }
+
+    function getCurrentWeaponState() {
+      return state.weapons[state.weaponKey];
+    }
+
+    function switchWeapon(weaponKey) {
+      if (!state.weapons[weaponKey] || !state.weapons[weaponKey].unlocked) return;
+      if (state.weaponKey === weaponKey) return;
+      state.weaponKey = weaponKey;
+      state.reloading = false;
+      state.lastShotMs = 0;
+      updateHud();
+    }
+
+    function updateWeaponPickups(dt) {
+      for (let i = weaponPickups.length - 1; i >= 0; i--) {
+        const pickup = weaponPickups[i];
+        if (!pickup.group) continue;
+        pickup.group.rotation.y += dt * 1.6;
+        pickup.group.position.y = 0.95 + Math.sin(performance.now() * 0.003 + i) * 0.1;
+
+        if (pickup.group.position.distanceTo(player.root.position) < 1.8) {
+          unlockWeapon(pickup.weaponKey);
+          addFloatingScore(pickup.group.position.clone().add(new THREE.Vector3(0, 1, 0)), pickup.weaponKey.toUpperCase() + ' freigeschaltet', '#9fe3ff');
+          scene.remove(pickup.group);
+          if (pickup.core.material) pickup.core.material.dispose();
+          if (pickup.halo.material) pickup.halo.material.dispose();
+          weaponPickups.splice(i, 1);
+        }
+      }
+    }
+
+    function unlockWeapon(weaponKey) {
+      const weapon = state.weapons[weaponKey];
+      if (!weapon) return;
+      weapon.unlocked = true;
+      const def = weaponDefs[weaponKey];
+      weapon.ammo = Math.max(weapon.ammo, def.magazine);
+      weapon.reserve = Math.max(weapon.reserve, def.magazine * 3);
+      switchWeapon(weaponKey);
+    }
+
+    function onZombieKilled(zombie, hitPoint) {
+      if (zombie) zombie.scored = true;
+      const now = performance.now();
+      if (now - state.lastKillMs < 1800) {
+        state.comboMultiplier = Math.min(5, state.comboMultiplier + 1);
+        state.killStreak += 1;
+        state.comboPulse = 0.35;
+      } else {
+        state.comboMultiplier = 1;
+        state.killStreak = 1;
+      }
+      state.lastKillMs = now;
+      state.comboTimer = 1.8;
+
+      const baseScore = zombie && zombie.scoreValue ? zombie.scoreValue : 130;
+      const gained = Math.round(baseScore * state.comboMultiplier);
+      state.score += gained;
+      if (state.score > state.highScore) {
+        state.highScore = state.score;
+        window.localStorage.setItem('ammotest_highscore', String(state.highScore));
+      }
+
+      addFloatingScore((hitPoint || zombie.root.position).clone().add(new THREE.Vector3(0, 1.25, 0)), '+' + gained, '#ffd58b');
+      trySpawnDrop((hitPoint || zombie.root.position).clone());
+
+      if (state.killStreak === 5) announceSpree('KILLING SPREE');
+      if (state.killStreak === 10) announceSpree('UNSTOPPABLE');
+      if (state.killStreak === 20) announceSpree('GODLIKE');
+    }
+
+    function addFloatingScore(worldPos, text, color) {
+      const node = document.createElement('div');
+      node.className = 'floating-score';
+      node.textContent = text;
+      node.style.color = color || '#ffd58b';
+      hud.floatingLayer.appendChild(node);
+      floatingScores.push({
+        worldPos: worldPos.clone(),
+        life: 1.1,
+        totalLife: 1.1,
+        node
+      });
+    }
+
+    function updateFloatingScores(dt) {
+      for (let i = floatingScores.length - 1; i >= 0; i--) {
+        const item = floatingScores[i];
+        item.life -= dt;
+        item.worldPos.y += dt * 0.9;
+        const projected = item.worldPos.clone().project(camera);
+        const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+        item.node.style.left = x + 'px';
+        item.node.style.top = y + 'px';
+        item.node.style.opacity = String(Math.max(0, item.life / item.totalLife));
+        item.node.style.transform = 'translate(-50%, -50%) scale(' + (0.92 + 0.12 * (item.life / item.totalLife)) + ')';
+        if (item.life <= 0) {
+          if (item.node.parentNode) item.node.parentNode.removeChild(item.node);
+          floatingScores.splice(i, 1);
+        }
+      }
+    }
+
+    function updateComboAndStreak(dt) {
+      state.comboPulse = Math.max(0, state.comboPulse - dt);
+      if (state.comboTimer > 0) {
+        state.comboTimer -= dt;
+        if (state.comboTimer <= 0) {
+          state.comboMultiplier = 1;
+          state.killStreak = 0;
+        }
+      }
+      if (state.spreeTimer > 0) {
+        state.spreeTimer -= dt;
+        if (state.spreeTimer <= 0) state.spreeText = '';
+      }
+    }
+
+    function announceSpree(text) {
+      state.spreeText = text;
+      state.spreeTimer = 1.5;
+      addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.6, 0)), text, '#ffb25f');
+    }
+
+    function addCameraShake(amount) {
+      state.shakePower = Math.min(0.3, state.shakePower + amount);
+    }
+
+    function updatePlayerFeedback(dt) {
+      state.shakePower = Math.max(0, state.shakePower - dt * 0.9);
+      state.hitFlash = Math.max(0, state.hitFlash - dt * 1.8);
+      if (hud.hitFlash) {
+        hud.hitFlash.style.opacity = String(Math.min(0.35, state.hitFlash));
+      }
+    }
+
+    function trySpawnDrop(position) {
+      if (itemDrops.length >= 10) return;
+      const roll = Math.random();
+      if (roll < 0.18) {
+        spawnItemDrop('heal', position.clone());
+      } else if (roll < 0.26) {
+        spawnItemDrop('ammo', position.clone());
+      }
+    }
+
+    function spawnItemDrop(type, position) {
+      const color = type === 'heal' ? 0x5aff7f : 0xffd95a;
+      const mesh = new THREE.Mesh(
+        type === 'heal' ? new THREE.BoxGeometry(0.65, 0.65, 0.65) : new THREE.CylinderGeometry(0.28, 0.28, 0.72, 12),
+        new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.72,
+          roughness: 0.25,
+          metalness: 0.45,
+          transparent: true,
+          opacity: 1
+        })
+      );
+      mesh.position.copy(position);
+      mesh.position.y = 0.9;
+      mesh.castShadow = true;
+      scene.add(mesh);
+      itemDrops.push({ type, mesh, life: 14, totalLife: 14, spin: THREE.MathUtils.randFloat(1.2, 2.4) });
+    }
+
+    function updateItemDrops(dt) {
+      for (let i = itemDrops.length - 1; i >= 0; i--) {
+        const drop = itemDrops[i];
+        drop.life -= dt;
+        drop.mesh.rotation.y += dt * drop.spin;
+        drop.mesh.position.y = 0.9 + Math.sin(performance.now() * 0.005 + i) * 0.08;
+
+        if (drop.life < 2 && drop.mesh.material) {
+          drop.mesh.material.opacity = Math.max(0, drop.life / 2);
+        }
+
+        if (drop.mesh.position.distanceTo(player.root.position) < 1.6) {
+          if (drop.type === 'heal') {
+            state.health = Math.min(state.maxHealth, state.health + 25);
+            addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+25 HP', '#8bffab');
+          } else {
+            const weapon = getCurrentWeaponState();
+            weapon.reserve += 12;
+            addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+12 Ammo', '#ffe18f');
+          }
+          scene.remove(drop.mesh);
+          if (drop.mesh.material) drop.mesh.material.dispose();
+          if (drop.mesh.geometry) drop.mesh.geometry.dispose();
+          itemDrops.splice(i, 1);
+          continue;
+        }
+
+        if (drop.life <= 0) {
+          scene.remove(drop.mesh);
+          if (drop.mesh.material) drop.mesh.material.dispose();
+          if (drop.mesh.geometry) drop.mesh.geometry.dispose();
+          itemDrops.splice(i, 1);
         }
       }
     }
@@ -1533,9 +2169,13 @@
 
     function spawnBloodDecalOnSurface(position, normal, scaleMul, lifeSeconds) {
       enforceDecalLimit(80);
+      const useGlossyPool = (scaleMul || 0) > 0.8;
+      const decalBaseMaterial = useGlossyPool && materials.bloodDecalGloss
+        ? materials.bloodDecalGloss
+        : materials.bloodDecal;
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(1.2 * scaleMul, 1.2 * scaleMul),
-        materials.bloodDecal.clone()
+        decalBaseMaterial.clone()
       );
       const n = normal ? normal.clone().normalize() : WORLD_UP.clone();
       mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
@@ -1688,18 +2328,44 @@
     }
 
     function updateHud() {
-      hud.health.textContent = Math.max(0, Math.round(state.health));
+      const clampedHealth = Math.max(0, Math.round(state.health));
+      const weaponDef = getCurrentWeaponDef();
+      const weaponState = getCurrentWeaponState();
+      hud.health.textContent = clampedHealth;
       hud.score.textContent = state.score;
+      hud.highscore.textContent = state.highScore;
       hud.wave.textContent = state.wave;
-      hud.ammo.textContent = state.reloading ? '...' : state.ammo;
-      hud.reserve.textContent = state.reserve;
+      hud.weapon.textContent = weaponDef ? weaponDef.label : '-';
+      hud.ammo.textContent = state.reloading ? '...' : (weaponState ? weaponState.ammo : 0);
+      hud.reserve.textContent = weaponState ? weaponState.reserve : 0;
+      const comboText = 'x' + state.comboMultiplier + (state.spreeText ? ' · ' + state.spreeText : '');
+      hud.combo.textContent = comboText;
+      if (state.comboMultiplier > 1) {
+        hud.combo.style.color = '#ffb15a';
+        hud.combo.style.opacity = String(0.85 + Math.sin(performance.now() * 0.018) * 0.15 + state.comboPulse * 0.12);
+      } else {
+        hud.combo.style.color = '';
+        hud.combo.style.opacity = '';
+      }
+      if (clampedHealth < 30) {
+        const pulse = 0.55 + Math.sin(performance.now() * 0.01) * 0.45;
+        hud.health.style.color = '#ff6666';
+        hud.health.style.opacity = String(Math.max(0.2, pulse));
+      } else {
+        hud.health.style.color = '';
+        hud.health.style.opacity = '';
+      }
     }
 
     function endGame() {
       state.running = false;
       state.mouseDown = false;
+      if (state.score > state.highScore) {
+        state.highScore = state.score;
+        window.localStorage.setItem('ammotest_highscore', String(state.highScore));
+      }
       hud.overlay.classList.remove('hidden');
-      hud.overlay.innerHTML = '<div><h1>Game Over</h1><p>Punkte: <strong>' + state.score + '</strong></p><p>Welle: <strong>' + state.wave + '</strong></p><p>Druecke F5 fuer Neustart.</p></div>';
+      hud.overlay.innerHTML = '<div><h1>Game Over</h1><p>Punkte: <strong>' + state.score + '</strong></p><p>Highscore: <strong>' + state.highScore + '</strong></p><p>Welle: <strong>' + state.wave + '</strong></p><p>Druecke F5 fuer Neustart.</p></div>';
     }
 
     function initPhysics(ammo) {
@@ -1712,10 +2378,28 @@
       return { world, collisionConfig, dispatcher, broadphase, solver };
     }
 
+    function loadBase64Texture(three, windowKey, repeatX, repeatY, maxAnisotropy, encoding) {
+      const b64 = window[windowKey];
+      if (!b64) return null;
+
+      const image = new Image();
+      image.src = 'data:image/jpeg;base64,' + b64;
+      const texture = new three.Texture(image);
+      texture.wrapS = three.RepeatWrapping;
+      texture.wrapT = three.RepeatWrapping;
+      texture.repeat.set(repeatX || 1, repeatY || 1);
+      texture.anisotropy = maxAnisotropy || 1;
+      if (encoding !== undefined) texture.encoding = encoding;
+      image.onload = () => { texture.needsUpdate = true; };
+      image.onerror = () => { console.warn('[textures] Fehler beim Laden von', windowKey); };
+      texture.needsUpdate = true;
+      return texture;
+    }
+
     function createProceduralTextures(rendererRef, three) {
       const maxAnisotropy = rendererRef.capabilities.getMaxAnisotropy ? rendererRef.capabilities.getMaxAnisotropy() : 1;
 
-      const createCanvasTexture = (size, paint, repeatX, repeatY) => {
+      const createCanvasTexture = (size, paint, repeatX, repeatY, useSrgb) => {
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
@@ -1727,67 +2411,77 @@
         texture.wrapT = three.RepeatWrapping;
         texture.repeat.set(repeatX || 1, repeatY || 1);
         texture.anisotropy = maxAnisotropy;
-        if ('encoding' in texture && three.sRGBEncoding !== undefined) texture.encoding = three.sRGBEncoding;
+        if (useSrgb && 'encoding' in texture && three.sRGBEncoding !== undefined) texture.encoding = three.sRGBEncoding;
         texture.needsUpdate = true;
         return texture;
       };
 
-      const ground = createCanvasTexture(1024, (ctx, size) => {
-        ctx.fillStyle = '#4e5458';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 36000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const shade = 52 + Math.floor(Math.random() * 30);
-          ctx.fillStyle = 'rgba(' + shade + ',' + (shade + 5) + ',' + (shade + 8) + ',0.26)';
-          ctx.fillRect(x, y, 2, 2);
-        }
-      }, 16, 16);
-
-      const groundRoughness = createCanvasTexture(1024, (ctx, size) => {
-        ctx.fillStyle = '#c9c9c9';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 26000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const value = 120 + Math.floor(Math.random() * 94);
+      const createNoiseTexture = (size, repeatX, repeatY, min, max) => createCanvasTexture(size, (ctx, canvasSize) => {
+        ctx.fillStyle = 'rgb(' + min + ',' + min + ',' + min + ')';
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+        for (let i = 0; i < canvasSize * canvasSize * 0.045; i++) {
+          const x = Math.random() * canvasSize;
+          const y = Math.random() * canvasSize;
+          const value = min + Math.floor(Math.random() * Math.max(1, max - min));
           ctx.fillStyle = 'rgb(' + value + ',' + value + ',' + value + ')';
           ctx.fillRect(x, y, 2, 2);
         }
-      }, 16, 16);
+      }, repeatX, repeatY, false);
 
-      const asphalt = createCanvasTexture(1024, (ctx, size) => {
-        ctx.fillStyle = '#2f3236';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 36000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const shade = 38 + Math.floor(Math.random() * 24);
-          ctx.fillStyle = 'rgba(' + shade + ',' + shade + ',' + (shade + 4) + ',0.4)';
+      const createNormalNoiseTexture = (size, repeatX, repeatY, intensity) => createCanvasTexture(size, (ctx, canvasSize) => {
+        const img = ctx.createImageData(canvasSize, canvasSize);
+        const data = img.data;
+        const amount = intensity || 20;
+        for (let i = 0; i < data.length; i += 4) {
+          const nx = 128 + Math.floor(THREE.MathUtils.randFloatSpread(amount));
+          const ny = 128 + Math.floor(THREE.MathUtils.randFloatSpread(amount));
+          data[i] = nx;
+          data[i + 1] = ny;
+          data[i + 2] = 255;
+          data[i + 3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+      }, repeatX, repeatY, false);
+
+      const createColorTexture = (size, repeatX, repeatY, baseColor, detailStrength) => createCanvasTexture(size, (ctx, canvasSize) => {
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+        for (let i = 0; i < canvasSize * canvasSize * 0.05; i++) {
+          const x = Math.random() * canvasSize;
+          const y = Math.random() * canvasSize;
+          const delta = Math.floor(THREE.MathUtils.randFloatSpread(detailStrength || 28));
+          const value = Math.max(20, Math.min(230, 110 + delta));
+          ctx.fillStyle = 'rgba(' + value + ',' + value + ',' + value + ',0.15)';
           ctx.fillRect(x, y, 2, 2);
         }
-        ctx.strokeStyle = 'rgba(255,255,255,0.045)';
-        for (let i = 0; i < 80; i++) {
-          ctx.beginPath();
-          const sx = Math.random() * size;
-          const sy = Math.random() * size;
-          ctx.moveTo(sx, sy);
-          ctx.lineTo(sx + THREE.MathUtils.randFloatSpread(120), sy + THREE.MathUtils.randFloatSpread(120));
-          ctx.stroke();
-        }
-      }, 10, 10);
+      }, repeatX, repeatY, true);
 
-      const concrete = createCanvasTexture(512, (ctx, size) => {
-        ctx.fillStyle = '#777c81';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 12000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const value = 100 + Math.floor(Math.random() * 70);
-          ctx.fillStyle = 'rgba(' + value + ',' + (value + 2) + ',' + (value + 4) + ',0.24)';
-          ctx.fillRect(x, y, 2, 2);
-        }
-      }, 4, 4);
+      const loadTextureSet = (setName, repeatX, repeatY, fallbackColor) => {
+        const setKey = setName.toUpperCase();
+        const encoding = three.sRGBEncoding !== undefined ? three.sRGBEncoding : undefined;
+        const color = loadBase64Texture(three, '__TEX_' + setKey + '_COLOR__', repeatX, repeatY, maxAnisotropy, encoding) || fallbackColor;
+        const normal = loadBase64Texture(three, '__TEX_' + setKey + '_NORMAL__', repeatX, repeatY, maxAnisotropy, undefined) ||
+          createNormalNoiseTexture(512, repeatX, repeatY, 18);
+        const roughness = loadBase64Texture(three, '__TEX_' + setKey + '_ROUGHNESS__', repeatX, repeatY, maxAnisotropy, undefined) ||
+          createNoiseTexture(512, repeatX, repeatY, 145, 235);
+        const ao = loadBase64Texture(three, '__TEX_' + setKey + '_AO__', repeatX, repeatY, maxAnisotropy, undefined) ||
+          createNoiseTexture(512, repeatX, repeatY, 158, 238);
+        return { color, normal, roughness, ao };
+      };
+
+      const groundFallback = createColorTexture(1024, 16, 16, '#4e5458', 24);
+      const asphaltFallback = createColorTexture(1024, 10, 10, '#2f3236', 18);
+      const concreteFallback = createColorTexture(512, 4, 4, '#777c81', 22);
+      const crateFallback = createColorTexture(512, 2, 2, '#684a2e', 36);
+      const metalFallback = createColorTexture(512, 4, 4, '#636770', 16);
+      const rockFallback = createColorTexture(512, 2, 2, '#3d3f45', 28);
+
+      const groundSet = loadTextureSet('ground_dirt', 16, 16, groundFallback);
+      const asphaltSet = loadTextureSet('asphalt', 10, 10, asphaltFallback);
+      const concreteSet = loadTextureSet('concrete', 4, 4, concreteFallback);
+      const crateSet = loadTextureSet('wood_crate', 2, 2, crateFallback);
+      const metalSet = loadTextureSet('metal_plate', 4, 4, metalFallback);
+      const rockSet = loadTextureSet('rock_wall', 2, 2, rockFallback);
 
       const lane = createCanvasTexture(256, (ctx, size) => {
         ctx.fillStyle = '#e7d8a3';
@@ -1800,51 +2494,7 @@
           ctx.lineTo(size, y + THREE.MathUtils.randFloatSpread(4));
           ctx.stroke();
         }
-      }, 1, 1);
-
-      const metal = createCanvasTexture(512, (ctx, size) => {
-        ctx.fillStyle = '#636770';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 10000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const b = 104 + Math.floor(Math.random() * 90);
-          ctx.fillStyle = 'rgba(' + b + ',' + b + ',' + (b + 5) + ',0.33)';
-          ctx.fillRect(x, y, 1, 1);
-        }
-      }, 4, 4);
-
-      const crate = createCanvasTexture(512, (ctx, size) => {
-        ctx.fillStyle = '#684a2e';
-        ctx.fillRect(0, 0, size, size);
-        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-        ctx.lineWidth = 6;
-        for (let y = 0; y <= size; y += 48) {
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(size, y + THREE.MathUtils.randFloatSpread(8));
-          ctx.stroke();
-        }
-        for (let i = 0; i < 5200; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const value = 88 + Math.floor(Math.random() * 40);
-          ctx.fillStyle = 'rgba(' + value + ',' + (value - 8) + ',' + (value - 16) + ',0.45)';
-          ctx.fillRect(x, y, 2, 1);
-        }
-      }, 2, 2);
-
-      const rock = createCanvasTexture(512, (ctx, size) => {
-        ctx.fillStyle = '#3d3f45';
-        ctx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 14000; i++) {
-          const x = Math.random() * size;
-          const y = Math.random() * size;
-          const value = 52 + Math.floor(Math.random() * 60);
-          ctx.fillStyle = 'rgba(' + value + ',' + value + ',' + (value + 4) + ',0.32)';
-          ctx.fillRect(x, y, 2, 2);
-        }
-      }, 2, 2);
+      }, 1, 1, true);
 
       const zombieCloth = createCanvasTexture(512, (ctx, size) => {
         ctx.fillStyle = '#4c6156';
@@ -1856,7 +2506,7 @@
           ctx.fillStyle = 'rgba(' + (value - 20) + ',' + value + ',' + (value - 10) + ',0.3)';
           ctx.fillRect(x, y, 2, 2);
         }
-      }, 2, 2);
+      }, 2, 2, true);
 
       const zombieSkin = createCanvasTexture(512, (ctx, size) => {
         ctx.fillStyle = '#7c8f5a';
@@ -1868,7 +2518,7 @@
           ctx.fillStyle = 'rgba(' + (value - 18) + ',' + value + ',' + (value - 34) + ',0.28)';
           ctx.fillRect(x, y, 2, 2);
         }
-      }, 2, 2);
+      }, 2, 2, true);
 
       const rust = createCanvasTexture(512, (ctx, size) => {
         ctx.fillStyle = '#6d4e3d';
@@ -1880,20 +2530,18 @@
           ctx.fillStyle = 'rgba(' + r + ',' + (60 + Math.floor(Math.random() * 34)) + ',' + (36 + Math.floor(Math.random() * 20)) + ',0.35)';
           ctx.fillRect(x, y, 2, 2);
         }
-      }, 2, 2);
+      }, 2, 2, true);
 
       const blood = createCanvasTexture(512, (ctx, size) => {
         ctx.clearRect(0, 0, size, size);
         const centerX = size * 0.5;
         const centerY = size * 0.5;
-
         for (let i = 0; i < 42; i++) {
           const radius = 18 + Math.random() * 120;
           const angle = Math.random() * Math.PI * 2;
           const x = centerX + Math.cos(angle) * radius;
           const y = centerY + Math.sin(angle) * radius;
           const blob = 14 + Math.random() * 38;
-
           const grad = ctx.createRadialGradient(x, y, 2, x, y, blob);
           grad.addColorStop(0, 'rgba(136,12,12,0.82)');
           grad.addColorStop(1, 'rgba(90,8,8,0.02)');
@@ -1902,21 +2550,46 @@
           ctx.arc(x, y, blob, 0, Math.PI * 2);
           ctx.fill();
         }
-      }, 1, 1);
+      }, 1, 1, true);
 
       return {
-        ground,
-        groundRoughness,
-        asphalt,
-        concrete,
+        ground: groundSet.color,
+        groundNormal: groundSet.normal,
+        groundRoughness: groundSet.roughness,
+        groundAo: groundSet.ao,
+
+        asphalt: asphaltSet.color,
+        asphaltNormal: asphaltSet.normal,
+        asphaltRoughness: asphaltSet.roughness,
+        asphaltAo: asphaltSet.ao,
+
+        concrete: concreteSet.color,
+        concreteNormal: concreteSet.normal,
+        concreteRoughness: concreteSet.roughness,
+        concreteAo: concreteSet.ao,
+
+        crate: crateSet.color,
+        crateNormal: crateSet.normal,
+        crateRoughness: crateSet.roughness,
+        crateAo: crateSet.ao,
+
+        metal: metalSet.color,
+        metalNormal: metalSet.normal,
+        metalRoughness: metalSet.roughness,
+        metalAo: metalSet.ao,
+
+        rock: rockSet.color,
+        rockNormal: rockSet.normal,
+        rockRoughness: rockSet.roughness,
+        rockAo: rockSet.ao,
+
         lane,
-        metal,
-        crate,
-        rock,
         zombieCloth,
         zombieSkin,
         rust,
-        blood
+        blood,
+        fallbackNormalCharacter: createNormalNoiseTexture(256, 1, 1, 24),
+        fallbackNormalDecal: createNormalNoiseTexture(256, 1, 1, 14)
       };
     }
 
@@ -1933,46 +2606,78 @@
         polygonOffsetUnits: -1
       });
 
+      const makeTexturedMaterial = (options, set, normalStrength) => {
+        return new THREE.MeshStandardMaterial(Object.assign({}, options, {
+          map: set.color,
+          normalMap: set.normal,
+          normalScale: new THREE.Vector2(normalStrength, normalStrength),
+          roughnessMap: set.roughness,
+          aoMap: set.ao,
+          aoMapIntensity: 0.85
+        }));
+      };
+
+      const texGround = { color: textures.ground, normal: textures.groundNormal, roughness: textures.groundRoughness, ao: textures.groundAo };
+      const texAsphalt = { color: textures.asphalt, normal: textures.asphaltNormal, roughness: textures.asphaltRoughness, ao: textures.asphaltAo };
+      const texConcrete = { color: textures.concrete, normal: textures.concreteNormal, roughness: textures.concreteRoughness, ao: textures.concreteAo };
+      const texWood = { color: textures.crate, normal: textures.crateNormal, roughness: textures.crateRoughness, ao: textures.crateAo };
+      const texMetal = { color: textures.metal, normal: textures.metalNormal, roughness: textures.metalRoughness, ao: textures.metalAo };
+      const texRock = { color: textures.rock, normal: textures.rockNormal, roughness: textures.rockRoughness, ao: textures.rockAo };
+
       return {
-        ground: new THREE.MeshStandardMaterial({ map: textures.ground, roughnessMap: textures.groundRoughness, roughness: 0.95, metalness: 0.04 }),
+        ground: makeTexturedMaterial({ roughness: 0.95, metalness: 0.04 }, texGround, 0.8),
         groundCollider: new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 1, metalness: 0 }),
         invisibleCollider: new THREE.MeshBasicMaterial({ color: 0x000000, visible: false }),
-        wall: new THREE.MeshStandardMaterial({ map: textures.rock, roughness: 0.9, metalness: 0.12 }),
-        road: new THREE.MeshStandardMaterial({ map: textures.asphalt, roughness: 0.9, metalness: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
+        wall: makeTexturedMaterial({ roughness: 0.9, metalness: 0.12 }, texRock, 1.2),
+        road: makeTexturedMaterial({ roughness: 0.9, metalness: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }, texAsphalt, 0.8),
         lanePaint: new THREE.MeshStandardMaterial({ map: textures.lane, roughness: 0.65, metalness: 0.05 }),
-        sidewalk: new THREE.MeshStandardMaterial({ map: textures.concrete, roughness: 0.88, metalness: 0.06 }),
+        sidewalk: makeTexturedMaterial({ roughness: 0.88, metalness: 0.06 }, texConcrete, 0.8),
         grime: grimeMaterial,
-        concreteBlock: new THREE.MeshStandardMaterial({ map: textures.concrete, roughness: 0.92, metalness: 0.04 }),
-        breakableCrate: new THREE.MeshStandardMaterial({ map: textures.crate, roughness: 0.8, metalness: 0.03 }),
-        rock: new THREE.MeshStandardMaterial({ map: textures.rock, roughness: 0.95, metalness: 0.05 }),
-        carBody: new THREE.MeshStandardMaterial({ map: textures.metal, roughness: 0.45, metalness: 0.55 }),
-        carRust: new THREE.MeshStandardMaterial({ map: textures.rust, roughness: 0.82, metalness: 0.22 }),
+        concreteBlock: makeTexturedMaterial({ roughness: 0.92, metalness: 0.04 }, texConcrete, 0.8),
+        breakableCrate: makeTexturedMaterial({ roughness: 0.8, metalness: 0.03 }, texWood, 1.2),
+        rock: makeTexturedMaterial({ roughness: 0.95, metalness: 0.05 }, texRock, 1.2),
+        carBody: makeTexturedMaterial({ roughness: 0.45, metalness: 0.55 }, texMetal, 0.9),
+        carRust: makeTexturedMaterial({ roughness: 0.82, metalness: 0.22, color: 0x9a7f62 }, texMetal, 0.9),
         carWindow: new THREE.MeshStandardMaterial({ color: 0x4d606d, roughness: 0.2, metalness: 0.6, transparent: true, opacity: 0.72 }),
         tire: new THREE.MeshStandardMaterial({ color: 0x1f2023, roughness: 0.9, metalness: 0.08 }),
-        lampPole: new THREE.MeshStandardMaterial({ color: 0x5e646c, roughness: 0.56, metalness: 0.5 }),
+        lampPole: makeTexturedMaterial({ roughness: 0.56, metalness: 0.5 }, texMetal, 0.9),
         lampBulb: new THREE.MeshStandardMaterial({ color: 0xffd39d, emissive: 0xffb46b, emissiveIntensity: 1.2, roughness: 0.15, metalness: 0.2 }),
 
-        playerBody: new THREE.MeshStandardMaterial({ map: textures.metal, roughness: 0.5, metalness: 0.4 }),
-        playerHelmet: new THREE.MeshStandardMaterial({ color: 0x8ec7f1, roughness: 0.34, metalness: 0.64 }),
-        playerVest: new THREE.MeshStandardMaterial({ color: 0x385264, roughness: 0.72, metalness: 0.18 }),
-        weapon: new THREE.MeshStandardMaterial({ map: textures.metal, roughness: 0.32, metalness: 0.78 }),
-        weaponDark: new THREE.MeshStandardMaterial({ color: 0x25282f, roughness: 0.42, metalness: 0.65 }),
+        playerBody: new THREE.MeshStandardMaterial({ map: textures.metal, normalMap: textures.fallbackNormalCharacter, roughness: 0.5, metalness: 0.4 }),
+        playerHelmet: new THREE.MeshStandardMaterial({ color: 0x8ec7f1, normalMap: textures.fallbackNormalCharacter, roughness: 0.34, metalness: 0.64 }),
+        playerVest: new THREE.MeshStandardMaterial({ color: 0x385264, normalMap: textures.fallbackNormalCharacter, roughness: 0.72, metalness: 0.18 }),
+        weapon: makeTexturedMaterial({ roughness: 0.32, metalness: 0.78 }, texMetal, 0.9),
+        weaponDark: new THREE.MeshStandardMaterial({ color: 0x25282f, normalMap: textures.fallbackNormalCharacter, roughness: 0.42, metalness: 0.65 }),
 
-        zombieBody: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, roughness: 0.7, metalness: 0.14 }),
-        zombieCloth: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, roughness: 0.78, metalness: 0.08 }),
-        zombieHead: new THREE.MeshStandardMaterial({ map: textures.zombieSkin, roughness: 0.82, metalness: 0.02 }),
-        zombieJaw: new THREE.MeshStandardMaterial({ color: 0x5a6d42, roughness: 0.86, metalness: 0.02 }),
-        zombieLimb: new THREE.MeshStandardMaterial({ map: textures.zombieSkin, roughness: 0.8, metalness: 0.03 }),
+        zombieBody: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, normalMap: textures.fallbackNormalCharacter, roughness: 0.7, metalness: 0.14 }),
+        zombieCloth: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, normalMap: textures.fallbackNormalCharacter, roughness: 0.78, metalness: 0.08 }),
+        zombieHead: new THREE.MeshStandardMaterial({ map: textures.zombieSkin, normalMap: textures.fallbackNormalCharacter, roughness: 0.82, metalness: 0.02 }),
+        zombieJaw: new THREE.MeshStandardMaterial({ color: 0x5a6d42, normalMap: textures.fallbackNormalCharacter, roughness: 0.86, metalness: 0.02 }),
+        zombieLimb: new THREE.MeshStandardMaterial({ map: textures.zombieSkin, normalMap: textures.fallbackNormalCharacter, roughness: 0.8, metalness: 0.03 }),
 
         bullet: new THREE.MeshStandardMaterial({ color: 0xffdf8a, emissive: 0xffa023, emissiveIntensity: 1.3, roughness: 0.2, metalness: 0.7 }),
         organChunk: new THREE.MeshStandardMaterial({ color: 0x4f1a1a, roughness: 0.9, metalness: 0.02 }),
         bloodDecal: new THREE.MeshStandardMaterial({
           map: textures.blood,
+          normalMap: textures.fallbackNormalDecal,
           color: 0x8d1111,
           transparent: true,
           opacity: 0.75,
           roughness: 1,
           metalness: 0,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1
+        }),
+        bloodDecalGloss: new THREE.MeshStandardMaterial({
+          map: textures.blood,
+          normalMap: textures.fallbackNormalDecal,
+          color: 0x6b0000,
+          transparent: true,
+          opacity: 0.86,
+          roughness: 0.08,
+          metalness: 0.72,
           depthWrite: false,
           polygonOffset: true,
           polygonOffsetFactor: -1,

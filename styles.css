@@ -60,6 +60,29 @@ canvas {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
 }
 
+#overlay .upgrade-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+#overlay .upgrade-btn {
+  border: 1px solid rgba(182, 219, 255, 0.42);
+  border-radius: 10px;
+  background: rgba(21, 36, 52, 0.76);
+  color: #ecf5ff;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 600;
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+#overlay .upgrade-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(34, 56, 78, 0.86);
+}
+
 #overlay.hidden {
   display: none;
 }
@@ -106,4 +129,30 @@ h1 {
   margin-top: -1px;
   background: #ffe3aa;
   border-radius: 50%;
+}
+
+#hit-flash {
+  position: fixed;
+  inset: 0;
+  background: rgba(200, 0, 0, 0.28);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 18;
+  transition: opacity 120ms ease-out;
+}
+
+#floating-score-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 16;
+}
+
+.floating-score {
+  position: fixed;
+  color: #ffd78c;
+  font-weight: 700;
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
 }

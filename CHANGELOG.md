@@ -21,6 +21,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added heavy-impact dust bursts for dynamic heavy objects and debris when slamming into the ground.
 - Added crate cluster-explosion mechanic when 3+ zombie deaths happen within radius 4.0 (radial impulse + sparks).
 - Standardized short browser QA run to ~5 seconds for start/gfx smoke checks.
+- Added ambientcg texture pipeline in `fetch-official-runtimes.sh` (download, channel mapping, Base64 `tex_*.js` emit, cleanup).
+- Added Three.js r128 postprocessing vendor fetch (Pass, EffectComposer, RenderPass, ShaderPass, SSAOPass, required shaders).
+- Added optional Base64 texture boot path in `index.html` + `src/game.js` with graceful Canvas fallback.
+- Added EffectComposer render chain (RenderPass -> SSAO -> Vignette -> FXAA) with runtime fallback.
+- Added dynamic muzzle flash and zombie death lights plus lamp halo sprites and lamp shadow casting.
+- Added multi-weapon gameplay loop (pistol/shotgun/smg), pickups, scroll/1-2-3 switching and per-weapon ammo pools.
+- Added wave upgrades, combo multiplier, floating score UI, streak calls, localStorage highscore, and heal/ammo drops.
+- Added advanced wave spawning (runner/brute mix by wave, lane spawns, enforced spawn-safe radius).
+- Added periodic crate respawn system (every 3 waves) using remembered spawn points.
 
 ### Changed
 - Filled AGENTS project placeholders (name, goal, and main features).
@@ -35,6 +44,7 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Improved depth/shadow stability (camera clipping range + shadow bias/normal-bias tuning) to reduce visible flicker artifacts.
 - Rebalanced early zombie pressure (spawn distance, move speed, melee range/damage) so the start phase remains playable during smoke tests.
 - Added project QA standard: after graphics/gameplay changes always run start-check and short graphics-error check.
+- Switched world atmosphere profile (fog/light tuning) and updated zombie visuals to humanoid-part composition with animated gait.
 
 ## [0.1.0] - 2026-02-26
 ### Added
