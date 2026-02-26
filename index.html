@@ -15,20 +15,100 @@
       <div><strong>Waffe:</strong> <span id="weapon">Pistole</span></div>
       <div><strong>Munition:</strong> <span id="ammo">12</span> / <span id="reserve">48</span></div>
       <div><strong>Combo:</strong> <span id="combo">x1</span></div>
-      <div class="hint">WASD bewegen · Maus zielen · Linksklick schießen · R nachladen · Shift sprinten</div>
+      <div class="hint">WASD bewegen · Maus zielen · Linksklick schießen · R nachladen · Shift sprinten · ESC Pause</div>
     </div>
+
     <div id="overlay">
-      <h1>Top-Down Shooter</h1>
-      <p>Drücke <strong>Enter</strong>, um zu starten.</p>
+      <div class="menu-panel">
+        <section class="menu-screen active" data-screen="main" id="screen-main">
+          <h1>TOP-DOWN SHOOTER</h1>
+          <p id="main-last-run">Letzter Lauf: Kein Eintrag</p>
+          <div class="menu-actions">
+            <button class="menu-btn" id="btn-play">SPIELEN</button>
+            <button class="menu-btn" id="btn-open-settings">EINSTELLUNGEN</button>
+            <button class="menu-btn" id="btn-open-highscores">HIGHSCORES</button>
+          </div>
+          <span class="menu-version">v0.2.0</span>
+        </section>
+
+        <section class="menu-screen" data-screen="settings" id="screen-settings">
+          <h2>EINSTELLUNGEN</h2>
+          <label class="menu-label" for="setting-sensitivity">Mausempfindlichkeit</label>
+          <input id="setting-sensitivity" type="range" min="0.5" max="3.0" step="0.05" value="1.0" />
+          <p class="menu-meta">Aktuell: <span id="setting-sensitivity-value">1.00</span></p>
+
+          <p class="menu-label">Grafik-Qualität</p>
+          <div class="quality-row" id="quality-buttons">
+            <button class="quality-btn" data-quality="low">NIEDRIG</button>
+            <button class="quality-btn active" data-quality="medium">MITTEL</button>
+            <button class="quality-btn" data-quality="high">HOCH</button>
+          </div>
+
+          <button class="menu-btn" id="btn-fullscreen">VOLLBILD</button>
+
+          <div class="controls-box">
+            <p><strong>Steuerung</strong></p>
+            <p>WASD · Maus · LMB · R · Shift · ESC · 1/2/3</p>
+          </div>
+
+          <div class="menu-actions">
+            <button class="menu-btn" id="btn-settings-back">ZURÜCK</button>
+          </div>
+        </section>
+
+        <section class="menu-screen" data-screen="highscores" id="screen-highscores">
+          <h2>HIGHSCORES</h2>
+          <div id="highscores-list" class="highscores-list"></div>
+          <div class="menu-actions">
+            <button class="menu-btn" id="btn-clear-highscores">ALLE LÖSCHEN</button>
+            <button class="menu-btn" id="btn-highscores-back">ZURÜCK</button>
+          </div>
+        </section>
+
+        <section class="menu-screen" data-screen="pause" id="screen-pause">
+          <h2>PAUSE</h2>
+          <p class="menu-meta">Score: <span id="pause-score">0</span></p>
+          <p class="menu-meta">Welle: <span id="pause-wave">1</span></p>
+          <div class="menu-actions">
+            <button class="menu-btn" id="btn-resume">WEITERSPIELEN</button>
+            <button class="menu-btn" id="btn-restart">NEUSTART</button>
+            <button class="menu-btn" id="btn-mainmenu-from-pause">HAUPTMENÜ</button>
+          </div>
+        </section>
+
+        <section class="menu-screen" data-screen="upgrade" id="screen-upgrade">
+          <h2 id="upgrade-title">WELLE GESCHAFFT</h2>
+          <p class="menu-meta">Wähle ein Upgrade:</p>
+          <div id="upgrade-options" class="menu-actions"></div>
+        </section>
+
+        <section class="menu-screen" data-screen="gameover" id="screen-gameover">
+          <h1>GAME OVER</h1>
+          <p class="menu-meta">Score: <span id="go-score">0</span></p>
+          <p class="menu-meta">Welle: <span id="go-wave">1</span></p>
+          <p class="menu-meta">Kills: <span id="go-kills">0</span></p>
+          <p class="menu-meta">Zeit: <span id="go-time">00:00</span></p>
+          <p class="menu-highlight" id="go-new-highscore">NEUER HIGHSCORE! 🏆</p>
+          <div class="menu-actions">
+            <button class="menu-btn" id="btn-retry">NOCHMAL</button>
+            <button class="menu-btn" id="btn-mainmenu-from-gameover">HAUPTMENÜ</button>
+          </div>
+        </section>
+
+        <section class="menu-screen" data-screen="error" id="screen-error">
+          <h2>STARTFEHLER</h2>
+          <p id="error-message">Spiel konnte nicht geladen werden.</p>
+        </section>
+      </div>
     </div>
+
     <div id="crosshair" aria-hidden="true"></div>
     <div id="hit-flash" aria-hidden="true"></div>
     <div id="floating-score-layer" aria-hidden="true"></div>
 
     <script>
-      // Textur-Dateien optional laden (Fallback auf Canvas-Texturen wenn nicht vorhanden)
       (function() {
-        var sets = ['asphalt','concrete','wood_crate','metal_plate','rock_wall','ground_dirt'];
+        var sets = ['asphalt', 'concrete', 'wood_crate', 'metal_plate', 'rock_wall', 'ground_dirt'];
         sets.forEach(function(name) {
           var s = document.createElement('script');
           s.src = 'vendor/textures/tex_' + name + '.js';
@@ -55,6 +135,6 @@
       ];
     </script>
 
-    <script src="src/runtime-loader.js?v=20260226-4"></script>
+    <script src="src/runtime-loader.js?v=20260226-5"></script>
   </body>
 </html>

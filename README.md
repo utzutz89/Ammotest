@@ -3,7 +3,7 @@
 Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 
 - Physically based Rendering (PBR) mit Schatten und Fog
-- Ammo.js Physik-Welt fuer Spieler, Zombies, Projektile, Kollisionen und dynamische Objekte
+- Ammo.js Physik-Welt fuer Spieler, Zombies, Kollisionen und dynamische Objekte
 - prozedural erzeugte Texturen (Asphalt, Beton, Holz, Rost, Zombie-Skin, Blut-Decals)
 - zerstoerbare Holzkisten mit Physikreaktion und Splinter-Effekt
 - Zombie-Wellen mit Treffer-Splatter, Blutpartikeln und Boden-Splats
@@ -14,8 +14,12 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - Impact-Staubbursts bei schweren Bodenaufprallen (Kisten + Truemmer)
 - Cluster-Mechanik: Kisten explodieren bei 3+ Zombie-Toden im Radius
 - mehrere Waffen (Pistole/Shotgun/SMG), Weapon-Pickups und eigener Ammo-Pool pro Waffe
+- detaillierte Waffenmodelle je Waffentyp (Pistole, Shotgun, SMG) am rechten Arm-Pivot
+- Raycast-Hitscan fuer Schuesse mit kurzen Tracer-Linien statt langsamer Kugel-Meshes
+- Muzzle Flash (Sprite + Licht + Rauch) und Einschlag-Effekte (Funken, Staub, Impact-Decals)
 - Zombie-Typen (Normal/Runner/Brute) mit Wave-abhängiger Verteilung
 - Upgrade-Auswahl zwischen Wellen, Combo-/Streak-Score, Heal-/Ammo-Drops
+- komplettes Screen-Menuesystem (Hauptmenue, Einstellungen, Highscores, Pause, Game Over)
 - Post-Processing Pipeline (SSAO, Vignette, FXAA) mit Fallback auf direkten Renderer
 
 ## Runtimes herunterladen
@@ -43,7 +47,7 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 ## Start
 
 1. `index.html` im Browser oeffnen
-2. `Enter` druecken
+2. im Hauptmenue `SPIELEN` klicken oder `Enter` druecken
 
 ## Steuerung
 
@@ -53,6 +57,7 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 - `Linksklick halten`: feuern
 - `R`: nachladen
 - `1/2/3` oder Mausrad: Waffen wechseln
+- `ESC`: Pausemenue oeffnen/schliessen
 
 ## Hinweis
 

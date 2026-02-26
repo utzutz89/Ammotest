@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 ### Added
+- Added humanoid player model built from articulated Box/Cylinder parts (legs, torso, armor, arms, head, helmet, visor).
+- Added per-weapon detailed gun models rebuilt on weapon switch (Pistole, Shotgun, SMG) at the right-hand gun pivot.
+- Added hitscan shooting system with raycast damage, short tracer lines, muzzle flash sprite/light/smoke, and surface impact effects.
+- Added multi-screen menu flow on the existing overlay: Main Menu, Settings, Highscores, Pause, Upgrade, and extended Game Over screen.
+- Added persistent settings in localStorage (mouse sensitivity, quality presets, fullscreen toggle wiring) and persistent top-5 highscores.
 - Rebuilt the game loop to use official Three.js + Ammo.js runtime APIs for real 3D rendering and rigid-body simulation.
 - Added procedural in-game texture generation for ground, metal, crate, rock, player, and enemy materials.
 - Added improved lighting/shadows, camera follow, particle hit effects, and upgraded HUD/crosshair presentation.
@@ -32,6 +37,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added periodic crate respawn system (every 3 waves) using remembered spawn points.
 
 ### Changed
+- Replaced old physical bullet-mesh flight path with instant-hit raycasting for pistol/smg and pellet spread raycasts for shotgun.
+- Reworked game-over handling to include score/wave/kills/time, highscore detection against stored ranking, and menu button actions.
+- Updated overlay/CSS styling to unified panel/button transitions, quality button states, and mobile-compatible menu layout.
 - Filled AGENTS project placeholders (name, goal, and main features).
 - Fixed `.codex/config.toml.example` by renaming `agents.max_concurrent` to `agents.max_threads` for Codex CLI compatibility.
 - Removed macOS quarantine attribute from `.codex/config.toml.example` to avoid Gatekeeper blocking when opening/copied.
