@@ -1,17 +1,13 @@
 # Top-Down Shooter (lokal, ohne Server)
 
-Dieses Repository enthält einen spielbaren Top-Down-Shooter, der lokal im Browser läuft.
+Dieses Repository enthält einen spielbaren Top-Down-Shooter, der komplett lokal im Browser läuft (auch via `file://`).
 
-## Wichtiger Hinweis zu Three.js / Ammo.js
+## Enthalten
 
-Du hattest recht: Eine echte `three.min.js` ist normalerweise deutlich größer (oft mehrere hundert KB).
-
-Aktuell enthält das Repo **Fallback-Dateien**:
-
-- `vendor/three-lite.min.js`
-- `vendor/ammo-lite.js`
-
-Diese sind nur Platzhalter-Runtimes, damit das Spiel in eingeschränkten Umgebungen startbar bleibt.
+- `vendor/three.min.js` und `vendor/ammo.js` als lokale Standard-Runtimes.
+- `vendor/three-lite.min.js` und `vendor/ammo-lite.js` als Fallbacks.
+- `src/runtime-loader.js` für automatische Auswahl der verfügbaren Runtime.
+- `src/game.js` mit Spiellogik (Wellen, Gegner, Projektile, HUD, Reload-System).
 
 ## Offizielle lokale Bundles herunterladen (empfohlen)
 
@@ -52,3 +48,7 @@ Damit nutzt das Projekt automatisch echte lokale Runtimes, sobald sie vorhanden 
 - `Linksklick`: schießen
 - `R`: nachladen
 - `Shift`: sprinten
+
+## Hinweise
+
+Die App benötigt keinen Build-Prozess und keinen Webserver.
