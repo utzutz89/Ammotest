@@ -9,8 +9,8 @@
       throw new Error('Official Ammo.js runtime is required.');
     }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', precision: 'highp' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', precision: 'highp' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.4));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -29,6 +29,8 @@
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.35, 360);
     const cameraAnchor = new THREE.Vector3(0, 0, 0);
     const cameraTarget = new THREE.Vector3(0, 0, 0);
+    const cameraDesired = new THREE.Vector3(0, 0, 0);
+    const projectedScoreVector = new THREE.Vector3(0, 0, 0);
 
     const physics = initPhysics(AmmoLib);
     const physicsWorld = physics.world;
@@ -116,6 +118,9 @@
     const splatterSurfaces = [];
     const WORLD_UP = new THREE.Vector3(0, 1, 0);
     const transientLights = [];
+    const streetLampLights = [];
+    const LAMP_SHADOW_LIMIT = 4;
+    let streetLampShadowCount = 0;
     const weaponPickups = [];
     const itemDrops = [];
     const floatingScores = [];
@@ -126,6 +131,17 @@
       new THREE.Vector3(52, 1.1, -18),
       new THREE.Vector3(52, 1.1, 7)
     ];
+    const limits = {
+      effects: 360,
+      bullets: 90,
+      debris: 120,
+      transientLights: 16
+    };
+    const perfState = {
+      lowPerf: false,
+      avgDt: 1 / 60,
+      pressureTime: 0
+    };
 
     const textures = createProceduralTextures(renderer, THREE);
     const materials = createMaterials(textures);
@@ -153,9 +169,10 @@
       const dt = Math.min(clock.getDelta(), 0.033);
 
       if (state.running) {
+        updatePerformanceMode(dt);
         updatePlayer(dt);
         updateZombies(dt);
-        physicsWorld.stepSimulation(dt, 10);
+        physicsWorld.stepSimulation(dt, perfState.lowPerf ? 5 : 8);
         syncDynamicObjects();
         updateBullets(dt);
         updateEffects(dt);
@@ -176,6 +193,7 @@
       } else {
         updateIdleCamera();
         updateFloatingScores(dt);
+        updatePerformanceMode(dt);
       }
 
       if (postfx && postfx.composer) {
@@ -193,7 +211,8 @@
       if (postfx && postfx.composer) {
         postfx.composer.setSize(window.innerWidth, window.innerHeight);
         if (postfx.ssaoPass && typeof postfx.ssaoPass.setSize === 'function') {
-          postfx.ssaoPass.setSize(window.innerWidth, window.innerHeight);
+          const ssaoScale = postfx.ssaoScale || 0.8;
+          postfx.ssaoPass.setSize(Math.floor(window.innerWidth * ssaoScale), Math.floor(window.innerHeight * ssaoScale));
         }
         if (postfx.fxaaPass && postfx.fxaaPass.material && postfx.fxaaPass.material.uniforms && postfx.fxaaPass.material.uniforms.resolution) {
           postfx.fxaaPass.material.uniforms.resolution.value.set(1 / window.innerWidth, 1 / window.innerHeight);
@@ -247,7 +266,7 @@
 
     function updateCamera(dt) {
       cameraTarget.copy(player.root.position);
-      const desired = new THREE.Vector3(cameraTarget.x, 45, cameraTarget.z + 28);
+      const desired = cameraDesired.set(cameraTarget.x, 45, cameraTarget.z + 28);
       if (state.shakePower > 0.001) {
         desired.x += THREE.MathUtils.randFloatSpread(state.shakePower);
         desired.y += THREE.MathUtils.randFloatSpread(state.shakePower * 0.6);
@@ -267,7 +286,7 @@
       const sun = new THREE.DirectionalLight(0xfff3de, 2.1);
       sun.position.set(44, 70, 24);
       sun.castShadow = true;
-      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.mapSize.set(1536, 1536);
       sun.shadow.camera.near = 1;
       sun.shadow.camera.far = 260;
       sun.shadow.camera.left = -84;
@@ -311,7 +330,13 @@
       const renderPass = new THREE.RenderPass(scene, camera);
       composer.addPass(renderPass);
 
-      const ssaoPass = new THREE.SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+      const ssaoScale = 0.7;
+      const ssaoPass = new THREE.SSAOPass(
+        scene,
+        camera,
+        Math.floor(window.innerWidth * ssaoScale),
+        Math.floor(window.innerHeight * ssaoScale)
+      );
       ssaoPass.kernelRadius = 0.18;
       ssaoPass.minDistance = 0.002;
       ssaoPass.maxDistance = 0.06;
@@ -328,10 +353,14 @@
       }
       composer.addPass(fxaaPass);
 
-      return { composer, ssaoPass, fxaaPass };
+      return { composer, ssaoPass, fxaaPass, ssaoScale };
     }
 
     function spawnTransientPointLight(color, intensity, distance, position, duration) {
+      if (transientLights.length >= limits.transientLights) {
+        const oldest = transientLights.shift();
+        if (oldest && oldest.light) scene.remove(oldest.light);
+      }
       const light = new THREE.PointLight(color, intensity, distance, 2);
       light.position.copy(position);
       scene.add(light);
@@ -354,6 +383,52 @@
           transientLights.splice(i, 1);
         }
       }
+    }
+
+    function updatePerformanceMode(dt) {
+      perfState.avgDt = perfState.avgDt * 0.92 + dt * 0.08;
+      if (!perfState.lowPerf) {
+        if (perfState.avgDt > 1 / 42) {
+          perfState.pressureTime += dt;
+          if (perfState.pressureTime > 1.5) {
+            perfState.lowPerf = true;
+            applyLowPerformanceProfile();
+          }
+        } else {
+          perfState.pressureTime = Math.max(0, perfState.pressureTime - dt * 0.5);
+        }
+      }
+    }
+
+    function applyLowPerformanceProfile() {
+      renderer.setPixelRatio(Math.min(renderer.getPixelRatio(), 1));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      if (postfx && postfx.ssaoPass) {
+        postfx.ssaoPass.enabled = false;
+      }
+      lightRig.sun.castShadow = false;
+      for (let i = 0; i < streetLampLights.length; i++) {
+        const lamp = streetLampLights[i];
+        lamp.castShadow = false;
+      }
+      limits.effects = 260;
+      limits.bullets = 70;
+      limits.debris = 90;
+      console.warn('[perf] Low-Performance-Profil aktiviert (SSAO/Lampen-Schatten reduziert).');
+    }
+
+    function scaleEffectCount(count, minCount) {
+      const floor = minCount || 1;
+      const pressure = effects.length / Math.max(1, limits.effects);
+      let scale = 1;
+      if (perfState.lowPerf) {
+        scale = 0.55;
+      } else if (pressure > 0.85) {
+        scale = 0.68;
+      } else if (pressure > 0.65) {
+        scale = 0.82;
+      }
+      return Math.max(floor, Math.round(count * scale));
     }
 
     function createLampHaloSprite() {
@@ -572,11 +647,16 @@
 
       const glow = new THREE.PointLight(0xffd59b, 0.58, 22, 2);
       glow.position.copy(bulb.position);
-      glow.castShadow = true;
-      glow.shadow.mapSize.set(512, 512);
-      glow.shadow.camera.near = 0.4;
-      glow.shadow.camera.far = 26;
+      const enableShadow = streetLampShadowCount < LAMP_SHADOW_LIMIT;
+      glow.castShadow = enableShadow;
+      if (enableShadow) {
+        streetLampShadowCount += 1;
+        glow.shadow.mapSize.set(256, 256);
+        glow.shadow.camera.near = 0.4;
+        glow.shadow.camera.far = 26;
+      }
       scene.add(glow);
+      streetLampLights.push(glow);
 
       const halo = createLampHaloSprite();
       halo.position.copy(bulb.position);
@@ -1041,7 +1121,7 @@
         const bulletDirection = applySpreadToDirection(state.aimDirection, weapon.spreadDeg);
         const bulletMesh = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), materials.bullet);
         bulletMesh.position.copy(origin);
-        bulletMesh.castShadow = true;
+        bulletMesh.castShadow = false;
         scene.add(bulletMesh);
 
         const shape = new AmmoLib.btSphereShape(0.22);
@@ -1064,6 +1144,7 @@
         };
         body.entityRef = bullet;
         body.entityType = 'bullet';
+        if (bullets.length >= limits.bullets) removeBullet(0);
         bullets.push(bullet);
       }
 
@@ -1228,7 +1309,7 @@
     }
 
     function spawnGoreBurst(origin, direction, count) {
-      const burstCount = count || 48;
+      const burstCount = scaleEffectCount(count || 48, 14);
       for (let i = 0; i < burstCount; i++) {
         const useDisc = Math.random() < 0.32;
         const scale = useDisc
@@ -1257,7 +1338,7 @@
         spread.addScaledVector(direction, 0.45 + Math.random() * 0.8);
         const velocity = spread.normalize().multiplyScalar(38 + Math.random() * 36);
 
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: 0.5 + Math.random() * 0.7,
@@ -1273,7 +1354,8 @@
     }
 
     function spawnOrganChunks(origin, direction, count) {
-      for (let i = 0; i < count; i++) {
+      const chunkCount = scaleEffectCount(count || 3, 2);
+      for (let i = 0; i < chunkCount; i++) {
         const isSphere = Math.random() < 0.5;
         const geometry = isSphere
           ? new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 8, 6)
@@ -1296,7 +1378,7 @@
         ).addScaledVector(direction, 0.6).normalize();
         const velocity = throwDir.multiplyScalar(18 + Math.random() * 12);
 
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: 2.2 + Math.random() * 1.4,
@@ -1386,8 +1468,9 @@
     }
 
     function spawnDestructionFragments(destructible, direction, count) {
+      const fragmentCount = scaleEffectCount(count, 3);
       const basePos = destructible.mesh.position.clone();
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < fragmentCount; i++) {
         const scaleX = Math.max(0.14, destructible.width * THREE.MathUtils.randFloat(0.12, 0.25));
         const scaleY = Math.max(0.1, destructible.height * THREE.MathUtils.randFloat(0.08, 0.2));
         const scaleZ = Math.max(0.14, destructible.depth * THREE.MathUtils.randFloat(0.12, 0.26));
@@ -1440,6 +1523,7 @@
         AmmoLib.destroy(angular);
 
         const life = 3 + Math.random() * 2;
+        if (debris.length >= limits.debris) removeDebris(0);
         debris.push({
           mesh,
           body,
@@ -1856,7 +1940,7 @@
         const item = floatingScores[i];
         item.life -= dt;
         item.worldPos.y += dt * 0.9;
-        const projected = item.worldPos.clone().project(camera);
+        const projected = projectedScoreVector.copy(item.worldPos).project(camera);
         const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
         const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
         item.node.style.left = x + 'px';
@@ -2019,7 +2103,8 @@
     }
 
     function spawnSparkBurst(origin, color, count, life, speed) {
-      for (let i = 0; i < count; i++) {
+      const particleCount = scaleEffectCount(count, 4);
+      for (let i = 0; i < particleCount; i++) {
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(0.1, 6, 6),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
@@ -2033,12 +2118,13 @@
           THREE.MathUtils.randFloatSpread(1)
         ).normalize().multiplyScalar(speed * (0.55 + Math.random() * 0.65));
 
-        effects.push({ mesh, velocity, life: life * (0.7 + Math.random() * 0.8), fade: 2.8, gravity: 18 });
+        pushEffect({ mesh, velocity, life: life * (0.7 + Math.random() * 0.8), fade: 2.8, gravity: 18 });
       }
     }
 
     function spawnDustBurst(origin, count) {
-      for (let i = 0; i < count; i++) {
+      const particleCount = scaleEffectCount(count, 4);
+      for (let i = 0; i < particleCount; i++) {
         const size = 0.06 + Math.random() * 0.1;
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(size, 6, 6),
@@ -2055,7 +2141,7 @@
         ).normalize().multiplyScalar(6 + Math.random() * 8);
 
         const totalLife = 0.24 + Math.random() * 0.3;
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: totalLife,
@@ -2069,7 +2155,8 @@
     }
 
     function spawnBloodSpray(origin, count, life, speed) {
-      for (let i = 0; i < count; i++) {
+      const particleCount = scaleEffectCount(count, 8);
+      for (let i = 0; i < particleCount; i++) {
         const size = 0.05 + Math.random() * 0.13;
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(size, 6, 6),
@@ -2086,7 +2173,7 @@
         ).normalize().multiplyScalar(speed * (0.4 + Math.random() * 1.2));
 
         const totalLife = life * (0.7 + Math.random() * 1.1);
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: totalLife,
@@ -2100,7 +2187,8 @@
     }
 
     function spawnBloodMist(origin, count) {
-      for (let i = 0; i < count; i++) {
+      const particleCount = scaleEffectCount(count, 3);
+      for (let i = 0; i < particleCount; i++) {
         const size = 0.02 + Math.random() * 0.04;
         const mesh = new THREE.Mesh(
           new THREE.SphereGeometry(size, 5, 5),
@@ -2117,7 +2205,7 @@
         ).multiplyScalar(6 + Math.random() * 10);
 
         const totalLife = 0.08 + Math.random() * 0.12;
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: totalLife,
@@ -2131,7 +2219,8 @@
     }
 
     function spawnWoodSplinters(origin, count, life, speed) {
-      for (let i = 0; i < count; i++) {
+      const particleCount = scaleEffectCount(count, 6);
+      for (let i = 0; i < particleCount; i++) {
         const mesh = new THREE.Mesh(
           new THREE.BoxGeometry(0.08 + Math.random() * 0.12, 0.04 + Math.random() * 0.08, 0.14 + Math.random() * 0.18),
           new THREE.MeshBasicMaterial({ color: 0x7a4f2c, transparent: true, opacity: 1 })
@@ -2148,7 +2237,7 @@
         ).normalize().multiplyScalar(speed * (0.55 + Math.random() * 0.8));
 
         const totalLife = life * (0.75 + Math.random() * 0.9);
-        effects.push({
+        pushEffect({
           mesh,
           velocity,
           life: totalLife,
@@ -2220,6 +2309,11 @@
         effect.mesh.geometry.dispose();
       }
       effects.splice(index, 1);
+    }
+
+    function pushEffect(effect) {
+      if (effects.length >= limits.effects) removeEffect(0);
+      effects.push(effect);
     }
 
     function registerSplatterSurface(mesh) {
