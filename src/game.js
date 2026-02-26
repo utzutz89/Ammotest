@@ -18,13 +18,13 @@
     if ('outputEncoding' in renderer && THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
     if ('toneMapping' in renderer && THREE.ACESFilmicToneMapping !== undefined) {
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.07;
+      renderer.toneMappingExposure = 1.38;
     }
     document.body.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x6a7a8a);
-    scene.fog = new THREE.Fog(0x6a7a8a, 35, 180);
+    scene.background = new THREE.Color(0x9cb7d1);
+    scene.fog = new THREE.Fog(0x9cb7d1, 48, 230);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.35, 360);
     const cameraAnchor = new THREE.Vector3(0, 0, 0);
@@ -196,6 +196,7 @@
     const itemDrops = [];
     const floatingScores = [];
     const crateSpawnPoints = [];
+    const buildingFootprints = [];
     const laneSpawnPoints = [
       new THREE.Vector3(-52, 1.1, -6),
       new THREE.Vector3(-52, 1.1, 18),
@@ -371,10 +372,10 @@
     }
 
     function setupLighting(sceneRef) {
-      const hemi = new THREE.HemisphereLight(0xb9d5f2, 0x1a1208, 0.46);
+      const hemi = new THREE.HemisphereLight(0xcfe2f7, 0x2f2a22, 0.9);
       sceneRef.add(hemi);
 
-      const sun = new THREE.DirectionalLight(0xfff3de, 2.1);
+      const sun = new THREE.DirectionalLight(0xfff5e1, 3.1);
       sun.position.set(44, 70, 24);
       sun.castShadow = true;
       sun.shadow.mapSize.set(1536, 1536);
@@ -390,15 +391,18 @@
       sceneRef.add(sun);
       sceneRef.add(sun.target);
 
-      const fill = new THREE.PointLight(0x89b5ff, 0.75, 180, 2);
-      fill.position.set(-42, 28, -34);
+      const fill = new THREE.PointLight(0x9ec2ff, 1.45, 240, 2);
+      fill.position.set(-36, 34, -26);
       sceneRef.add(fill);
 
-      const warmBack = new THREE.PointLight(0xffbf86, 0.35, 120, 2);
-      warmBack.position.set(32, 16, 38);
+      const warmBack = new THREE.PointLight(0xffc995, 0.7, 170, 2);
+      warmBack.position.set(34, 20, 44);
       sceneRef.add(warmBack);
 
-      return { sun };
+      const ambientBoost = new THREE.AmbientLight(0xf7fbff, 0.26);
+      sceneRef.add(ambientBoost);
+
+      return { sun, ambientBoost };
     }
 
     function initPostProcessing() {
@@ -435,7 +439,7 @@
 
       const vignettePass = new THREE.ShaderPass(THREE.VignetteShader);
       if (vignettePass.uniforms.offset) vignettePass.uniforms.offset.value = 0.9;
-      if (vignettePass.uniforms.darkness) vignettePass.uniforms.darkness.value = 0.45;
+      if (vignettePass.uniforms.darkness) vignettePass.uniforms.darkness.value = 0.22;
       composer.addPass(vignettePass);
 
       const fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
@@ -565,6 +569,8 @@
       addStaticBox(wallThickness, wallHeight, ARENA_HALF * 2, -ARENA_HALF - wallThickness * 0.5, wallHeight * 0.5, 0, materials.wall);
       addStaticBox(wallThickness, wallHeight, ARENA_HALF * 2, ARENA_HALF + wallThickness * 0.5, wallHeight * 0.5, 0, materials.wall);
 
+      buildCityBlocks();
+
       const obstacleCount = 42;
       for (let index = 0; index < obstacleCount; index++) {
         const width = 2 + Math.random() * 2.8;
@@ -575,6 +581,7 @@
 
         if (Math.hypot(x, z) < 20) continue;
         if (Math.abs(x) < 8 || Math.abs(z) < 8) continue;
+        if (isInReservedLot(x, z, 2.4)) continue;
 
         const roll = Math.random();
         if (roll < 0.45) {
@@ -621,6 +628,144 @@
       addStreetLamp(48, 14);
 
       spawnWeaponPickups();
+    }
+
+    function buildCityBlocks() {
+      const lots = [
+        { x: -66, z: -58, width: 14, depth: 16, height: 22, rotationY: 0.08 },
+        { x: -42, z: -62, width: 12, depth: 14, height: 18, rotationY: -0.06 },
+        { x: 52, z: -61, width: 16, depth: 15, height: 24, rotationY: 0.05 },
+        { x: 67, z: -42, width: 13, depth: 12, height: 17, rotationY: -0.12 },
+        { x: 64, z: 56, width: 15, depth: 17, height: 23, rotationY: -0.05 },
+        { x: 38, z: 62, width: 12, depth: 13, height: 16, rotationY: 0.09 },
+        { x: -54, z: 63, width: 17, depth: 15, height: 21, rotationY: 0.04 },
+        { x: -68, z: 36, width: 12, depth: 12, height: 15, rotationY: -0.1 }
+      ];
+
+      for (let i = 0; i < lots.length; i++) {
+        createBuildingBlock(lots[i]);
+      }
+    }
+
+    function createBuildingBlock(config) {
+      const width = config.width;
+      const depth = config.depth;
+      const height = config.height;
+      const x = config.x;
+      const z = config.z;
+
+      reserveBuildingLot(x, z, width + 3.5, depth + 3.5);
+
+      const root = new THREE.Group();
+      root.position.set(x, height * 0.5, z);
+      root.rotation.y = config.rotationY || 0;
+      scene.add(root);
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), materials.buildingFacade);
+      body.castShadow = true;
+      body.receiveShadow = true;
+      root.add(body);
+      registerSplatterSurface(body);
+
+      const roofLip = new THREE.Mesh(new THREE.BoxGeometry(width + 0.8, 0.5, depth + 0.8), materials.buildingRoof);
+      roofLip.position.y = height * 0.5 - 0.08;
+      roofLip.castShadow = true;
+      roofLip.receiveShadow = true;
+      root.add(roofLip);
+      registerSplatterSurface(roofLip);
+
+      const cornerOffsets = [
+        [-width * 0.5 + 0.25, 0, -depth * 0.5 + 0.25],
+        [width * 0.5 - 0.25, 0, -depth * 0.5 + 0.25],
+        [-width * 0.5 + 0.25, 0, depth * 0.5 - 0.25],
+        [width * 0.5 - 0.25, 0, depth * 0.5 - 0.25]
+      ];
+      for (let i = 0; i < cornerOffsets.length; i++) {
+        const [cx, cy, cz] = cornerOffsets[i];
+        const column = new THREE.Mesh(new THREE.BoxGeometry(0.38, height, 0.38), materials.buildingTrim);
+        column.position.set(cx, cy, cz);
+        column.castShadow = true;
+        column.receiveShadow = true;
+        root.add(column);
+      }
+
+      addBuildingWindows(root, width, depth, height);
+
+      const roofUnit = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 1.6), materials.buildingTrim);
+      roofUnit.position.set(0, height * 0.5 + 0.85, 0);
+      roofUnit.castShadow = true;
+      roofUnit.receiveShadow = true;
+      root.add(roofUnit);
+      registerSplatterSurface(roofUnit);
+
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.1, 10), materials.buildingRoof);
+      tank.position.set(1.2, height * 0.5 + 1.25, -0.6);
+      tank.castShadow = true;
+      tank.receiveShadow = true;
+      root.add(tank);
+      registerSplatterSurface(tank);
+
+      addStaticBox(width * 0.98, height, depth * 0.98, x, height * 0.5, z, materials.invisibleCollider, false);
+    }
+
+    function addBuildingWindows(root, width, depth, height) {
+      const floorCount = Math.max(3, Math.floor((height - 4) / 3));
+      const windowHeight = 1.18;
+      const windowWidth = 0.95;
+      const frontCols = Math.max(3, Math.floor((width - 2) / 2.05));
+      const sideCols = Math.max(2, Math.floor((depth - 2) / 2.05));
+
+      for (let row = 0; row < floorCount; row++) {
+        const y = -height * 0.5 + 2.2 + row * 2.6;
+        for (let col = 0; col < frontCols; col++) {
+          const x = -width * 0.5 + 1.2 + col * ((width - 2.4) / Math.max(1, frontCols - 1));
+          addWindowPanel(root, x, y, depth * 0.5 + 0.06, 0, windowWidth, windowHeight);
+          addWindowPanel(root, x, y, -depth * 0.5 - 0.06, Math.PI, windowWidth, windowHeight);
+        }
+        for (let col = 0; col < sideCols; col++) {
+          const z = -depth * 0.5 + 1.2 + col * ((depth - 2.4) / Math.max(1, sideCols - 1));
+          addWindowPanel(root, width * 0.5 + 0.06, y, z, Math.PI * 0.5, windowWidth, windowHeight);
+          addWindowPanel(root, -width * 0.5 - 0.06, y, z, -Math.PI * 0.5, windowWidth, windowHeight);
+        }
+      }
+    }
+
+    function addWindowPanel(parent, x, y, z, rotationY, width, height) {
+      const lit = Math.random() < 0.38;
+      const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, 0.08),
+        lit ? materials.buildingWindowLit : materials.buildingWindowDark
+      );
+      panel.position.set(x, y, z);
+      panel.rotation.y = rotationY;
+      panel.castShadow = false;
+      panel.receiveShadow = true;
+      parent.add(panel);
+    }
+
+    function reserveBuildingLot(x, z, width, depth) {
+      buildingFootprints.push({
+        minX: x - width * 0.5,
+        maxX: x + width * 0.5,
+        minZ: z - depth * 0.5,
+        maxZ: z + depth * 0.5
+      });
+    }
+
+    function isInReservedLot(x, z, margin) {
+      const pad = margin || 0;
+      for (let i = 0; i < buildingFootprints.length; i++) {
+        const lot = buildingFootprints[i];
+        if (
+          x >= lot.minX - pad &&
+          x <= lot.maxX + pad &&
+          z >= lot.minZ - pad &&
+          z <= lot.maxZ + pad
+        ) {
+          return true;
+        }
+      }
+      return false;
     }
 
     function buildRoadNetwork() {
@@ -1457,9 +1602,10 @@
         origin.clone().addScaledVector(direction, tracerLength)
       ]);
       const tracerMat = new THREE.LineBasicMaterial({
-        color: 0xffe8a0,
+        color: 0xfff4bf,
+        blending: THREE.AdditiveBlending,
         transparent: true,
-        opacity: 0.7
+        opacity: 0.96
       });
       const tracer = new THREE.Line(tracerGeo, tracerMat);
       scene.add(tracer);
@@ -1468,7 +1614,7 @@
         velocity: new THREE.Vector3(0, 0, 0),
         life: life || 0.035,
         totalLife: life || 0.035,
-        baseOpacity: 0.7,
+        baseOpacity: 0.96,
         gravity: 0
       });
     }
@@ -1497,20 +1643,20 @@
     function spawnMuzzleFlash(origin) {
       const flash = new THREE.Sprite(muzzleFlashMaterial);
       flash.position.copy(origin);
-      flash.scale.set(0.6, 0.6, 0.6);
+      flash.scale.set(0.95, 0.95, 0.95);
       scene.add(flash);
       pushEffect({
         mesh: flash,
         velocity: new THREE.Vector3(0, 0, 0),
-        life: 0.045,
-        totalLife: 0.045,
+        life: 0.06,
+        totalLife: 0.06,
         baseOpacity: 1,
         preserveMaterial: true,
         preserveGeometry: true,
         shrink: true
       });
 
-      spawnTransientPointLight(0xffa040, 4.0, 10, origin.clone(), 0.055);
+      spawnTransientPointLight(0xffb24f, 6.8, 14, origin.clone(), 0.075);
 
       const smokeCount = THREE.MathUtils.randInt(3, 4);
       for (let i = 0; i < smokeCount; i++) {
@@ -1541,9 +1687,10 @@
     }
 
     function spawnImpactEffects(point, normal) {
-      spawnSparkBurst(point.clone(), 0xddcc88, 6, 0.13, 18);
+      spawnSparkBurst(point.clone(), 0xffdd9a, 12, 0.18, 24);
       spawnDustPuff(point.clone(), 4);
       spawnImpactDecal(point.clone(), normal || WORLD_UP);
+      spawnTransientPointLight(0xffcf88, 2.3, 6, point.clone(), 0.065);
     }
 
     function applyZombieHitImpulse(zombie, direction, strength) {
@@ -2691,7 +2838,7 @@
       const particleCount = scaleEffectCount(count, 4);
       for (let i = 0; i < particleCount; i++) {
         const mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(0.1, 6, 6),
+          new THREE.SphereGeometry(0.12, 6, 6),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
         );
         mesh.position.copy(origin);
@@ -3355,13 +3502,20 @@
       const texRock = { color: textures.rock, normal: textures.rockNormal, roughness: textures.rockRoughness, ao: textures.rockAo };
 
       return {
-        ground: makeTexturedMaterial({ roughness: 0.95, metalness: 0.04 }, texGround, 0.8),
+        ground: makeTexturedMaterial({ color: 0xd5dce3, roughness: 0.9, metalness: 0.02 }, texGround, 0.8),
         groundCollider: new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 1, metalness: 0 }),
         invisibleCollider: new THREE.MeshBasicMaterial({ color: 0x000000, visible: false }),
-        wall: makeTexturedMaterial({ roughness: 0.9, metalness: 0.12 }, texRock, 1.2),
-        road: makeTexturedMaterial({ roughness: 0.9, metalness: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }, texAsphalt, 0.8),
-        lanePaint: new THREE.MeshStandardMaterial({ map: textures.lane, roughness: 0.65, metalness: 0.05 }),
-        sidewalk: makeTexturedMaterial({ roughness: 0.88, metalness: 0.06 }, texConcrete, 0.8),
+        wall: makeTexturedMaterial({ color: 0xc4cad2, roughness: 0.86, metalness: 0.1 }, texRock, 1.2),
+        road: makeTexturedMaterial({
+          color: 0xc6cdd6,
+          roughness: 0.78,
+          metalness: 0.06,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1
+        }, texAsphalt, 0.8),
+        lanePaint: new THREE.MeshStandardMaterial({ map: textures.lane, color: 0xfff4ca, roughness: 0.55, metalness: 0.05 }),
+        sidewalk: makeTexturedMaterial({ color: 0xd2d7dd, roughness: 0.8, metalness: 0.04 }, texConcrete, 0.8),
         grime: grimeMaterial,
         concreteBlock: makeTexturedMaterial({ roughness: 0.92, metalness: 0.04 }, texConcrete, 0.8),
         breakableCrate: makeTexturedMaterial({ roughness: 0.8, metalness: 0.03 }, texWood, 1.2),
@@ -3393,6 +3547,23 @@
         }),
         weaponTrigger: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.36, metalness: 0.55 }),
         weaponPump: new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.62, metalness: 0.32 }),
+        buildingFacade: makeTexturedMaterial({ color: 0xc5ccd6, roughness: 0.78, metalness: 0.1 }, texConcrete, 0.8),
+        buildingTrim: makeTexturedMaterial({ color: 0x9ea8b3, roughness: 0.72, metalness: 0.16 }, texConcrete, 0.7),
+        buildingRoof: makeTexturedMaterial({ color: 0x8f99a4, roughness: 0.66, metalness: 0.2 }, texMetal, 0.7),
+        buildingWindowLit: new THREE.MeshStandardMaterial({
+          color: 0xb9ddff,
+          emissive: 0x96cfff,
+          emissiveIntensity: 0.95,
+          roughness: 0.16,
+          metalness: 0.78
+        }),
+        buildingWindowDark: new THREE.MeshStandardMaterial({
+          color: 0x2a3441,
+          emissive: 0x0f141c,
+          emissiveIntensity: 0.2,
+          roughness: 0.22,
+          metalness: 0.72
+        }),
 
         zombieBody: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, normalMap: textures.fallbackNormalCharacter, roughness: 0.7, metalness: 0.14 }),
         zombieCloth: new THREE.MeshStandardMaterial({ map: textures.zombieCloth, normalMap: textures.fallbackNormalCharacter, roughness: 0.78, metalness: 0.08 }),

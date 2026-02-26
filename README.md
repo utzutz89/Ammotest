@@ -8,6 +8,7 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - zerstoerbare Holzkisten mit Physikreaktion und Splinter-Effekt
 - Zombie-Wellen mit Treffer-Splatter, Blutpartikeln und Boden-Splats
 - realistischere Urban-Map (Strassenkreuzung, Gehwege, Lampen, Wracks, Schmutzlayer)
+- zusaetzliche Stadtkulisse mit Gebaeudebloecken, Fassaden-Fenstern und Rooftop-Details
 - erweitertes Gore-System (Hit-Mist, Surface-Splatter, starke Death-Bursts, Organ-Chunks)
 - ragdoll-aehnliches Zombie-Sterben (kurz liegen bleiben, ausfaden, dann cleanup)
 - Objekt-Destruktion fuer Kisten/Stein/Beton mit physikalischen Fragmenten
@@ -17,10 +18,12 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - detaillierte Waffenmodelle je Waffentyp (Pistole, Shotgun, SMG) am rechten Arm-Pivot
 - Raycast-Hitscan fuer Schuesse mit kurzen Tracer-Linien statt langsamer Kugel-Meshes
 - Muzzle Flash (Sprite + Licht + Rauch) und Einschlag-Effekte (Funken, Staub, Impact-Decals)
+- deutlich sichtbarer Schuss-Output (hellere Tracer, staerkeres Muzzle-Flash-Licht, klarere Impact-Funken)
 - Zombie-Typen (Normal/Runner/Brute) mit Wave-abhängiger Verteilung
 - Upgrade-Auswahl zwischen Wellen, Combo-/Streak-Score, Heal-/Ammo-Drops
 - komplettes Screen-Menuesystem (Hauptmenue, Einstellungen, Highscores, Pause, Game Over)
 - Post-Processing Pipeline (SSAO, Vignette, FXAA) mit Fallback auf direkten Renderer
+- helleres Tageslicht-Tuning (Exposure/Fog/Light-Rig/Material-Balance) fuer bessere Lesbarkeit von Strassen und Umgebung
 
 ## Runtimes herunterladen
 
@@ -62,6 +65,22 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 ## Hinweis
 
 Das Spiel laeuft ohne Build-Prozess und ohne lokalen Webserver.
+
+## Single-File Build (Weitergabe)
+
+```bash
+./scripts/build-single-file.sh
+```
+
+Ergebnis:
+
+- `dist/index.html` (self-contained, per Doppelklick startbar)
+
+Optional als ZIP:
+
+```bash
+./scripts/package.sh
+```
 
 ## QA-Standard im Projekt
 

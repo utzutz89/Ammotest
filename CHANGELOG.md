@@ -6,6 +6,9 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 ### Added
+- Added `scripts/build-single-file.sh` to generate a self-contained `dist/index.html` bundle for file-sharing.
+- Added `scripts/package.sh` to create `dist/shooter-release-YYYYMMDD.zip` from the single-file build.
+- Added urban building blocks with collision, facade window grids, rooftop details, and reserved spawn footprints.
 - Added humanoid player model built from articulated Box/Cylinder parts (legs, torso, armor, arms, head, helmet, visor).
 - Added per-weapon detailed gun models rebuilt on weapon switch (Pistole, Shotgun, SMG) at the right-hand gun pivot.
 - Added hitscan shooting system with raycast damage, short tracer lines, muzzle flash sprite/light/smoke, and surface impact effects.
@@ -37,6 +40,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added periodic crate respawn system (every 3 waves) using remembered spawn points.
 
 ### Changed
+- Added bundled-mode guard to `src/runtime-loader.js` via `window.__BUNDLED__` to skip external runtime loading in single-file builds.
+- Added `dist/` to `.gitignore` (build artifacts excluded from repository tracking).
+- Brightened the visual baseline significantly (tone mapping exposure, fog/background, light rig, vignette, and brighter road/ground materials).
+- Improved weapon readability by strengthening tracers, muzzle flash/light, and impact spark lighting.
 - Replaced old physical bullet-mesh flight path with instant-hit raycasting for pistol/smg and pellet spread raycasts for shotgun.
 - Reworked game-over handling to include score/wave/kills/time, highscore detection against stored ranking, and menu button actions.
 - Updated overlay/CSS styling to unified panel/button transitions, quality button states, and mobile-compatible menu layout.
