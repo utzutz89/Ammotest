@@ -105,6 +105,11 @@
       waveSpawnAmount: 0,
       dropChanceMul: 1,
       ammoGainMul: 1,
+      critChance: 0,
+      critMul: 1.7,
+      bruteDamageMul: 1,
+      destructibleDamageMul: 1,
+      ammoRefundChance: 0,
       director: {
         intensity: 0.34,
         spawnTimer: 0,
@@ -161,6 +166,7 @@
       ammo: document.getElementById('ammo'),
       reserve: document.getElementById('reserve'),
       skills: document.getElementById('skills'),
+      modsStatus: document.getElementById('mods-status'),
       directorStatus: document.getElementById('director-status'),
       objectiveStatus: document.getElementById('objective-status'),
       combo: document.getElementById('combo'),
@@ -1474,6 +1480,16 @@
         hitStagger: 0
       };
 
+      const eliteChance = waveLevel >= 4 ? Math.min(0.32, Math.max(0, (waveLevel - 3) * 0.035)) : 0;
+      zombie.isElite = eliteChance > 0 && Math.random() < eliteChance;
+      if (zombie.isElite) {
+        zombie.hp *= 1.35;
+        zombie.speed *= 1.12;
+        zombie.contactDamage *= 1.18;
+        zombie.scoreValue = Math.round(zombie.scoreValue * 1.35);
+        zombie.root.scale.multiplyScalar(1.08);
+      }
+
       body.entityRef = zombie;
       body.entityType = 'zombie';
       zombies.push(zombie);
@@ -1783,6 +1799,9 @@
       if (now - state.lastShotMs < cooldownMs) return;
       state.lastShotMs = now;
       weaponState.ammo -= 1;
+      if (state.ammoRefundChance > 0 && Math.random() < state.ammoRefundChance) {
+        weaponState.ammo = Math.min(weapon.magazine, weaponState.ammo + 1);
+      }
       player.gunRecoil = Math.min(0.18, player.gunRecoil + (weapon.pellets > 1 ? 0.16 : 0.1));
 
       const origin = getMuzzleWorldPosition(weapon);
@@ -1902,18 +1921,29 @@
 
       if (hitType === 'zombie' && hitIndex >= 0) {
         const zombie = zombies[hitIndex];
-        zombie.hp -= damage;
+        let appliedDamage = damage;
+        if (zombie.type === 'brute') appliedDamage *= state.bruteDamageMul;
+        if (zombie.isElite) appliedDamage *= 1.08;
+        let isCrit = false;
+        if (state.critChance > 0 && Math.random() < state.critChance) {
+          appliedDamage *= state.critMul;
+          isCrit = true;
+        }
+        zombie.hp -= appliedDamage;
         spawnBloodSpray(hitPoint, THREE.MathUtils.randInt(30, 50), 0.72, 48);
         spawnBloodMist(hitPoint, THREE.MathUtils.randInt(8, 12));
         spawnBloodDecal(hitPoint, 0.3 + Math.random() * 0.35);
         spawnNearbySurfaceBlood(hitPoint, direction, 5.6);
         applyZombieHitImpulse(zombie, direction, 6.4);
+        if (isCrit) {
+          addFloatingScore(hitPoint.clone().add(new THREE.Vector3(0, 0.8, 0)), 'KRIT', '#ff8fb8');
+        }
         if (zombie.hp <= 0) {
           onZombieKilled(zombie, hitPoint);
           triggerZombieDeath(hitIndex, direction, hitPoint);
         }
       } else if (hitType === 'destructible' && hitIndex >= 0) {
-        damageDestructible(hitIndex, damage, direction);
+        damageDestructible(hitIndex, damage * state.destructibleDamageMul, direction);
         spawnImpactEffects(hitPoint, direction.clone().negate());
       } else if (hitType === 'surface') {
         spawnImpactEffects(hitPoint, hitNormal);
@@ -3020,9 +3050,22 @@
         { id: 'max_hp', label: 'Max HP +25' },
         { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
         { id: 'reserve', label: 'Mehr Reserve (+50%)' },
-        { id: 'firerate', label: 'Feuerrate +15%' }
+        { id: 'firerate', label: 'Feuerrate +15%' },
+        { id: 'mod_crit', label: 'Weapon Mod: Krit-Chance +8%' },
+        { id: 'mod_brute', label: 'Weapon Mod: +22% gegen Brutes' },
+        { id: 'mod_demo', label: 'Weapon Mod: +20% gegen Objekte' },
+        { id: 'mod_eff', label: 'Weapon Mod: 10% Ammo-Refund' }
       ];
       const all = base.slice();
+      const combatMods = [
+        { id: 'mod_crit', label: 'Weapon Mod: Krit-Chance +8%' },
+        { id: 'mod_brute', label: 'Weapon Mod: +22% gegen Brutes' },
+        { id: 'mod_demo', label: 'Weapon Mod: +20% gegen Objekte' },
+        { id: 'mod_eff', label: 'Weapon Mod: 10% Ammo-Refund' }
+      ];
+      for (let i = 0; i < combatMods.length; i++) {
+        if (!all.find((entry) => entry.id === combatMods[i].id)) all.push(combatMods[i]);
+      }
 
       if (state.perkPoints > 0) {
         const perkOptions = getAvailablePerkOptions();
@@ -3076,6 +3119,10 @@
         current.reserve = Math.round(current.reserve * 1.5);
       }
       if (id === 'firerate') state.fireRateMul *= 1.15;
+      if (id === 'mod_crit') state.critChance = Math.min(0.35, state.critChance + 0.08);
+      if (id === 'mod_brute') state.bruteDamageMul = Math.min(2.1, state.bruteDamageMul * 1.22);
+      if (id === 'mod_demo') state.destructibleDamageMul = Math.min(2.0, state.destructibleDamageMul * 1.2);
+      if (id === 'mod_eff') state.ammoRefundChance = Math.min(0.35, state.ammoRefundChance + 0.1);
     }
 
     function startNextWave() {
@@ -4033,6 +4080,13 @@
           ? ('E:' + (shockwave.cooldown > 0 ? shockwave.cooldown.toFixed(1) + 's' : 'bereit'))
           : 'E:-';
         hud.skills.textContent = adrenalineText + ' · ' + shockwaveText;
+      }
+      if (hud.modsStatus) {
+        const crit = Math.round(state.critChance * 100);
+        const brute = Math.round((state.bruteDamageMul - 1) * 100);
+        const demo = Math.round((state.destructibleDamageMul - 1) * 100);
+        const refund = Math.round(state.ammoRefundChance * 100);
+        hud.modsStatus.textContent = 'KRIT ' + crit + '% · Brute +' + brute + '% · Demo +' + demo + '% · Ammo ' + refund + '%';
       }
       if (hud.directorStatus) {
         const intensityPct = Math.round(state.director.intensity * 100);
