@@ -12,10 +12,12 @@ function testWavePlan() {
 function testDropTable() {
   const type1 = logic.rollDropType(CONFIG.drops.table, 0.1);
   const type2 = logic.rollDropType(CONFIG.drops.table, 0.22);
-  const type3 = logic.rollDropType(CONFIG.drops.table, 0.9);
+  const type3 = logic.rollDropType(CONFIG.drops.table, 0.28);
+  const type4 = logic.rollDropType(CONFIG.drops.table, 0.9);
   assert.strictEqual(type1, 'heal');
   assert.strictEqual(type2, 'ammo');
-  assert.strictEqual(type3, null);
+  assert.strictEqual(type3, 'armor');
+  assert.strictEqual(type4, null);
 }
 
 function testUpgradePickUnique() {

@@ -70,6 +70,8 @@
       aimDirection: new THREE.Vector3(0, 0, 1),
       maxHealth: 100,
       health: 100,
+      armor: 0,
+      maxArmor: 100,
       score: 0,
       highScore: Math.max(0, Number(window.localStorage.getItem('ammotest_highscore') || 0)),
       wave: 1,
@@ -135,6 +137,7 @@
 
     const hud = {
       health: document.getElementById('health'),
+      armor: document.getElementById('armor'),
       score: document.getElementById('score'),
       highscore: document.getElementById('highscore'),
       wave: document.getElementById('wave'),
@@ -1593,7 +1596,14 @@
         zombie.rightShin.rotation.x = gait * 0.72;
 
         if (distance < 1.8) {
-          state.health -= zombie.contactDamage * dt;
+          const rawDamage = zombie.contactDamage * dt;
+          if (state.armor > 0) {
+            const armorAbsorb = Math.min(state.armor, rawDamage * 0.7);
+            state.armor -= armorAbsorb;
+            state.health -= rawDamage - armorAbsorb;
+          } else {
+            state.health -= rawDamage;
+          }
           state.hitFlash = Math.min(1, state.hitFlash + dt * 3.2);
           addCameraShake(0.12 * dt * 12);
           if (state.health <= 0) {
@@ -3259,7 +3269,7 @@
       if (itemDrops.length >= maxDrops) return;
       let table = runtimeConfig.drops && Array.isArray(runtimeConfig.drops.table)
         ? runtimeConfig.drops.table
-        : [{ type: 'heal', chance: 0.18 }, { type: 'ammo', chance: 0.08 }];
+        : [{ type: 'heal', chance: 0.18 }, { type: 'ammo', chance: 0.08 }, { type: 'armor', chance: 0.06 }];
 
       if (state.dropChanceMul !== 1) {
         table = table.map((entry) => ({
@@ -3286,9 +3296,17 @@
     }
 
     function spawnItemDrop(type, position) {
-      const color = type === 'heal' ? 0x5aff7f : 0xffd95a;
+      const color = type === 'heal' ? 0x5aff7f : (type === 'armor' ? 0x5ac8ff : 0xffd95a);
+      let geometry;
+      if (type === 'heal') {
+        geometry = new THREE.BoxGeometry(0.65, 0.65, 0.65);
+      } else if (type === 'armor') {
+        geometry = new THREE.BoxGeometry(0.7, 0.5, 0.35);
+      } else {
+        geometry = new THREE.CylinderGeometry(0.28, 0.28, 0.72, 12);
+      }
       const mesh = new THREE.Mesh(
-        type === 'heal' ? new THREE.BoxGeometry(0.65, 0.65, 0.65) : new THREE.CylinderGeometry(0.28, 0.28, 0.72, 12),
+        geometry,
         new THREE.MeshStandardMaterial({
           color,
           emissive: color,
@@ -3321,6 +3339,9 @@
           if (drop.type === 'heal') {
             state.health = Math.min(state.maxHealth, state.health + 25);
             addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+25 HP', '#8bffab');
+          } else if (drop.type === 'armor') {
+            state.armor = Math.min(state.maxArmor, state.armor + 35);
+            addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+35 Rüstung', '#5ac8ff');
           } else {
             const weapon = getCurrentWeaponState();
             const ammoGain = Math.max(8, Math.round(12 * state.ammoGainMul));
@@ -3855,9 +3876,11 @@
 
     function updateHud() {
       const clampedHealth = Math.max(0, Math.round(state.health));
+      const clampedArmor = Math.max(0, Math.round(state.armor));
       const weaponDef = getCurrentWeaponDef();
       const weaponState = getCurrentWeaponState();
       hud.health.textContent = clampedHealth;
+      if (hud.armor) hud.armor.textContent = clampedArmor;
       hud.score.textContent = state.score;
       hud.highscore.textContent = state.highScore;
       hud.wave.textContent = state.wave;

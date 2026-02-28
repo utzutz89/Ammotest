@@ -71,7 +71,8 @@
       maxItems: 10,
       table: [
         { type: 'heal', chance: 0.18 },
-        { type: 'ammo', chance: 0.08 }
+        { type: 'ammo', chance: 0.08 },
+        { type: 'armor', chance: 0.06 }
       ]
     },
     limits: {
