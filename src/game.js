@@ -233,7 +233,11 @@
       new THREE.Vector3(-52, 1.1, -6),
       new THREE.Vector3(-52, 1.1, 18),
       new THREE.Vector3(52, 1.1, -18),
-      new THREE.Vector3(52, 1.1, 7)
+      new THREE.Vector3(52, 1.1, 7),
+      new THREE.Vector3(-8, 1.1, 52),
+      new THREE.Vector3(18, 1.1, 52),
+      new THREE.Vector3(-20, 1.1, -52),
+      new THREE.Vector3(10, 1.1, -52)
     ];
     const limits = {
       effects: Number(runtimeConfig.limits && runtimeConfig.limits.effects) || 360,
@@ -698,6 +702,7 @@
 
       buildCityBlocks();
       buildIndustrialSector();
+      buildMapLandmarks();
 
       const obstacleCount = 42;
       for (let index = 0; index < obstacleCount; index++) {
@@ -822,6 +827,115 @@
       createExplosiveBarrel(-56, -13);
       createBreakableCrate(2.1, 1.7, 2.3, -63, -14);
       createBreakableCrate(2.4, 1.9, 2.1, -55, -5);
+    }
+
+    function buildMapLandmarks() {
+      buildFuelStationPOI();
+      buildDepotPOI();
+      buildParkPOI();
+    }
+
+    function buildFuelStationPOI() {
+      reserveBuildingLot(58, 8, 20, 18);
+
+      const forecourt = new THREE.Mesh(new THREE.PlaneGeometry(16, 12), materials.concreteBlock);
+      forecourt.rotation.x = -Math.PI / 2;
+      forecourt.position.set(58, 0.06, 8);
+      forecourt.receiveShadow = true;
+      scene.add(forecourt);
+      registerSplatterSurface(forecourt);
+
+      addStaticBox(14, 0.55, 0.7, 58, 0.28, 14.2, materials.wall);
+      addStaticBox(0.7, 0.55, 10.5, 50.8, 0.28, 9, materials.wall);
+      addStaticBox(0.7, 0.55, 10.5, 65.2, 0.28, 9, materials.wall);
+      addStaticBox(7.6, 0.5, 7.4, 58, 3.1, 8, materials.buildingRoof);
+
+      addStaticBox(4.4, 2.9, 3.8, 52.8, 1.45, 8.2, materials.buildingFacade);
+      addStaticBox(4.2, 2.9, 3.5, 63.2, 1.45, 8.4, materials.buildingFacade);
+
+      createExplosiveBarrel(58, 5.7);
+      createExplosiveBarrel(56.2, 9.9);
+      createExplosiveBarrel(60.1, 10.4);
+      createBreakableCrate(1.9, 1.6, 1.9, 54.8, 5.2);
+      createBreakableCrate(2.0, 1.7, 2.0, 61.8, 5.3);
+    }
+
+    function buildDepotPOI() {
+      reserveBuildingLot(10, -60, 24, 20);
+
+      addStaticBox(16.4, 2.8, 4.8, 10, 1.4, -66, materials.buildingFacade);
+      addStaticBox(16.4, 0.6, 4.8, 10, 3.3, -66, materials.buildingRoof);
+
+      addStaticBox(0.7, 1.1, 16, 1.4, 0.55, -60, materials.wall);
+      addStaticBox(0.7, 1.1, 16, 18.6, 0.55, -60, materials.wall);
+      addStaticBox(17.8, 1.1, 0.7, 10, 0.55, -51.7, materials.wall);
+
+      createDestructibleBlock({
+        type: 'concrete',
+        width: 3.6,
+        height: 1.8,
+        depth: 2.4,
+        x: 6.4,
+        z: -58,
+        hp: 112,
+        mass: 0,
+        material: materials.concreteBlock,
+        fragmentMin: 6,
+        fragmentMax: 10
+      });
+
+      createDestructibleBlock({
+        type: 'rock',
+        width: 2.8,
+        height: 2.2,
+        depth: 2.6,
+        x: 13.8,
+        z: -57.5,
+        hp: 98,
+        mass: 0,
+        material: materials.rock,
+        fragmentMin: 5,
+        fragmentMax: 9
+      });
+
+      createBreakableCrate(2.2, 1.8, 2.1, 9.8, -55.6);
+      createBreakableCrate(2.1, 1.7, 2.0, 14.6, -62.2);
+    }
+
+    function buildParkPOI() {
+      reserveBuildingLot(-10, 58, 24, 22);
+
+      const lawn = new THREE.Mesh(new THREE.PlaneGeometry(18, 16), materials.grime);
+      lawn.rotation.x = -Math.PI / 2;
+      lawn.position.set(-10, 0.07, 58);
+      lawn.receiveShadow = true;
+      scene.add(lawn);
+
+      addStaticBox(0.7, 0.85, 14.8, -18.7, 0.43, 58, materials.wall);
+      addStaticBox(0.7, 0.85, 14.8, -1.3, 0.43, 58, materials.wall);
+      addStaticBox(17.8, 0.85, 0.7, -10, 0.43, 50.2, materials.wall);
+      addStaticBox(17.8, 0.85, 0.7, -10, 0.43, 65.8, materials.wall);
+
+      addStaticBox(5.8, 1.2, 1.8, -10, 0.6, 58, materials.sidewalk);
+      addStaticBox(1.8, 1.2, 5.8, -10, 0.6, 58, materials.sidewalk);
+
+      createDestructibleBlock({
+        type: 'rock',
+        width: 2.6,
+        height: 2.0,
+        depth: 2.6,
+        x: -14.2,
+        z: 54.2,
+        hp: 88,
+        mass: 0,
+        material: materials.rock,
+        fragmentMin: 4,
+        fragmentMax: 8
+      });
+
+      createBreakableCrate(2.0, 1.6, 2.1, -5.8, 61.4);
+      addStreetLamp(-15.4, 50.8);
+      addStreetLamp(-4.8, 65.2);
     }
 
     function createExplosiveBarrel(x, z) {
