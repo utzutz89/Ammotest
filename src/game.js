@@ -195,6 +195,8 @@
       goWave: document.getElementById('go-wave'),
       goKills: document.getElementById('go-kills'),
       goTime: document.getElementById('go-time'),
+      goTitle: document.getElementById('go-title'),
+      goSummary: document.getElementById('go-summary'),
       goNewHighscore: document.getElementById('go-new-highscore'),
       upgradeTitle: document.getElementById('upgrade-title'),
       upgradeOptions: document.getElementById('upgrade-options'),
@@ -250,6 +252,7 @@
       pressureTime: 0,
       effectScale: 1
     };
+    const maxWaves = Math.max(1, Math.floor(Number(runtimeConfig.gameplay && runtimeConfig.gameplay.maxWaves) || 8));
     let clock = null;
 
     const textures = createProceduralTextures(renderer, THREE);
@@ -1863,7 +1866,7 @@
           addCameraShake(0.12 * dt * 12);
           if (state.health <= 0) {
             state.health = 0;
-            endGame();
+            endGame('defeat');
             return;
           }
         }
@@ -3126,6 +3129,13 @@
       const objectiveDone = state.objective.completed || !state.objective.active;
       if (noWaveEntities && noPendingSpawns && objectiveDone && state.waveInProgress) {
         state.waveInProgress = false;
+        const completedFinalWave = gameLogic.isFinalWaveCompleted
+          ? gameLogic.isFinalWaveCompleted(state.wave, maxWaves)
+          : state.wave >= maxWaves;
+        if (completedFinalWave) {
+          endGame('victory');
+          return;
+        }
         openUpgradeOverlay();
       }
     }
@@ -3229,8 +3239,12 @@
       }
       if (id === 'reload') state.reloadDelayMs = Math.max(300, state.reloadDelayMs - 200);
       if (id === 'reserve') {
-        const current = state.weapons[state.weaponKey];
-        current.reserve = Math.round(current.reserve * 1.5);
+        const keys = Object.keys(state.weapons);
+        for (let i = 0; i < keys.length; i++) {
+          const weaponState = state.weapons[keys[i]];
+          if (!weaponState || !weaponState.unlocked) continue;
+          weaponState.reserve = Math.round(weaponState.reserve * 1.5);
+        }
       }
       if (id === 'firerate') state.fireRateMul *= 1.15;
       if (id === 'mod_crit') state.critChance = Math.min(0.35, state.critChance + 0.08);
@@ -4242,11 +4256,12 @@
       }
     }
 
-    function endGame() {
+    function endGame(result) {
       state.running = false;
       state.paused = false;
       state.upgradeMode = false;
       state.mouseDown = false;
+      const outcome = result === 'victory' ? 'victory' : 'defeat';
       if (progression) {
         progression.onRunEnded({
           score: state.score,
@@ -4264,6 +4279,10 @@
       if (hud.goWave) hud.goWave.textContent = String(state.wave);
       if (hud.goKills) hud.goKills.textContent = String(state.totalKills);
       if (hud.goTime) hud.goTime.textContent = formatTime(state.runTimeSec);
+      if (hud.goTitle) hud.goTitle.textContent = outcome === 'victory' ? 'MISSION ERFOLGREICH' : 'GAME OVER';
+      if (hud.goSummary) hud.goSummary.textContent = outcome === 'victory'
+        ? ('Alle ' + maxWaves + ' Wellen abgeschlossen.')
+        : 'Du wurdest überrannt.';
       const isNewTop = state.score > bestBefore;
       if (hud.goNewHighscore) hud.goNewHighscore.classList.toggle('hidden', !isNewTop);
 

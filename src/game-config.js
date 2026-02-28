@@ -82,6 +82,9 @@
         rewardXp: 75
       }
     },
+    gameplay: {
+      maxWaves: 8
+    },
     upgrades: [
       { id: 'damage', label: 'Mehr Schaden (+20%)' },
       { id: 'speed', label: 'Mehr Speed (+15%)' },

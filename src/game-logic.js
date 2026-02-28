@@ -101,6 +101,12 @@
     };
   }
 
+  function isFinalWaveCompleted(currentWave, maxWaves) {
+    const wave = Math.max(1, Math.floor(Number(currentWave || 1)));
+    const limit = Math.max(1, Math.floor(Number(maxWaves || 8)));
+    return wave >= limit;
+  }
+
   function createMeshPool() {
     const buckets = new Map();
     function getBucket(key) {
@@ -137,6 +143,7 @@
     computeAdaptiveLimits,
     evaluateDirectorIntensity,
     getObjectiveForWave,
+    isFinalWaveCompleted,
     createMeshPool
   };
   root.AmmoGameLogic = api;

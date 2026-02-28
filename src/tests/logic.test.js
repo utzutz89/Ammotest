@@ -57,11 +57,18 @@ function testObjectivePlan() {
   assert.ok(slayer.targetKills > 0);
 }
 
+function testFinalWaveCheck() {
+  assert.strictEqual(logic.isFinalWaveCompleted(8, 8), true);
+  assert.strictEqual(logic.isFinalWaveCompleted(7, 8), false);
+  assert.strictEqual(logic.isFinalWaveCompleted(12, 8), true);
+}
+
 testWavePlan();
 testDropTable();
 testUpgradePickUnique();
 testAdaptiveLimits();
 testDirectorIntensity();
 testObjectivePlan();
+testFinalWaveCheck();
 
 console.log('[ok] logic tests passed');
