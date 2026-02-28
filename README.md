@@ -16,7 +16,12 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - Impact-Staubbursts bei schweren Bodenaufprallen (Kisten + Truemmer)
 - Cluster-Mechanik: Kisten explodieren bei 3+ Zombie-Toden im Radius
 - mehrere Waffen (Pistole/Shotgun/SMG), Weapon-Pickups und eigener Ammo-Pool pro Waffe
+- zusaetzliche Waffen: Sturmgewehr und Revolver (Pickup-basiert, inkl. Weapon-Switch auf 1-5)
 - detaillierte Waffenmodelle je Waffentyp (Pistole, Shotgun, SMG) am rechten Arm-Pivot
+- EXP/Level-System mit skalierender XP-Kurve, Level-Up-Heal und Perk-Punkten
+- Perk-/Skill-System in der Wave-Upgrade-Auswahl (u.a. Executioner, Juggernaut, Scavenger, Gunslinger)
+- aktive Skills auf Tastatur (Q: Adrenalin-Buff, E: Schockwelle mit radialem Impuls)
+- neuer Industrie-Sektor mit explosiven Faessern, schwerer Deckung und zusaetzlichen Spawn-/Loot-Hotspots
 - Raycast-Hitscan fuer Schuesse mit kurzen Tracer-Linien statt langsamer Kugel-Meshes
 - Muzzle Flash (Sprite + Licht + Rauch) und Einschlag-Effekte (Funken, Staub, Impact-Decals)
 - deutlich sichtbarer Schuss-Output (hellere Tracer, staerkeres Muzzle-Flash-Licht, klarere Impact-Funken)
@@ -63,7 +68,8 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 - `Maus`: zielen
 - `Linksklick halten`: feuern
 - `R`: nachladen
-- `1/2/3` oder Mausrad: Waffen wechseln
+- `1/2/3/4/5` oder Mausrad: Waffen wechseln
+- `Q/E`: aktive Skills (nach Freischaltung)
 - `ESC`: Pausemenue oeffnen/schliessen
 - `F3`: Debug-Overlay ein/aus
 

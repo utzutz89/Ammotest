@@ -73,6 +73,10 @@
       score: 0,
       highScore: Math.max(0, Number(window.localStorage.getItem('ammotest_highscore') || 0)),
       wave: 1,
+      level: 1,
+      xp: 0,
+      nextLevelXp: 100,
+      perkPoints: 0,
       totalKills: 0,
       runTimeSec: 0,
       runStartedAtMs: 0,
@@ -94,6 +98,20 @@
       hitFlash: 0,
       canStartNextWave: false,
       waveInProgress: true,
+      dropChanceMul: 1,
+      ammoGainMul: 1,
+      perks: {
+        executioner: false,
+        juggernaut: false,
+        scavenger: false,
+        gunslinger: false,
+        skill_adrenaline: false,
+        skill_shockwave: false
+      },
+      skills: {
+        adrenaline: { unlocked: false, cooldown: 0, cooldownMax: 20, active: 0, duration: 6 },
+        shockwave: { unlocked: false, cooldown: 0, cooldownMax: 14, active: 0, duration: 0 }
+      },
       settings: {
         sensitivity: 1.0,
         quality: 'medium'
@@ -101,7 +119,9 @@
       weapons: {
         pistol: { unlocked: true, ammo: 12, reserve: 48 },
         shotgun: { unlocked: false, ammo: 0, reserve: 0 },
-        smg: { unlocked: false, ammo: 0, reserve: 0 }
+        smg: { unlocked: false, ammo: 0, reserve: 0 },
+        rifle: { unlocked: false, ammo: 0, reserve: 0 },
+        revolver: { unlocked: false, ammo: 0, reserve: 0 }
       }
     };
 
@@ -118,9 +138,12 @@
       score: document.getElementById('score'),
       highscore: document.getElementById('highscore'),
       wave: document.getElementById('wave'),
+      level: document.getElementById('level'),
+      xp: document.getElementById('xp'),
       weapon: document.getElementById('weapon'),
       ammo: document.getElementById('ammo'),
       reserve: document.getElementById('reserve'),
+      skills: document.getElementById('skills'),
       combo: document.getElementById('combo'),
       hitFlash: document.getElementById('hit-flash'),
       floatingLayer: document.getElementById('floating-score-layer'),
@@ -238,6 +261,7 @@
       if (state.running) {
         state.runTimeSec += dt;
         updatePerformanceMode(dt);
+        updateSkills(dt);
         updatePlayer(dt);
         updateZombies(dt);
         physicsWorld.stepSimulation(dt, perfState.lowPerf ? 5 : 8);
@@ -293,10 +317,12 @@
       const fallback = {
         pistol: { label: 'Pistole', damage: 34, cooldown: 92, magazine: 12, spreadDeg: 0, pellets: 1, maxDistance: 60, tracerLife: 0.035, muzzleOffset: [0, 0.08, 0.9] },
         shotgun: { label: 'Shotgun', damage: 18, cooldown: 680, magazine: 6, spreadDeg: 18, pellets: 6, maxDistance: 18, tracerLife: 0.03, muzzleOffset: [0, 0.12, 1.32] },
-        smg: { label: 'SMG', damage: 18, cooldown: 55, magazine: 32, spreadDeg: 4, pellets: 1, maxDistance: 60, tracerLife: 0.035, muzzleOffset: [0, 0.07, 0.95] }
+        smg: { label: 'SMG', damage: 18, cooldown: 55, magazine: 32, spreadDeg: 4, pellets: 1, maxDistance: 60, tracerLife: 0.035, muzzleOffset: [0, 0.07, 0.95] },
+        rifle: { label: 'Sturmgewehr', damage: 27, cooldown: 98, magazine: 28, spreadDeg: 2.2, pellets: 1, maxDistance: 68, tracerLife: 0.04, muzzleOffset: [0, 0.08, 1.05] },
+        revolver: { label: 'Revolver', damage: 64, cooldown: 320, magazine: 6, spreadDeg: 1.5, pellets: 1, maxDistance: 70, tracerLife: 0.045, muzzleOffset: [0, 0.08, 0.86] }
       };
       const source = (configWeapons && typeof configWeapons === 'object') ? configWeapons : fallback;
-      const keys = ['pistol', 'shotgun', 'smg'];
+      const keys = ['pistol', 'shotgun', 'smg', 'rifle', 'revolver'];
       const defs = {};
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
@@ -378,6 +404,10 @@
       if (key === '1') switchWeapon('pistol');
       if (key === '2') switchWeapon('shotgun');
       if (key === '3') switchWeapon('smg');
+      if (key === '4') switchWeapon('rifle');
+      if (key === '5') switchWeapon('revolver');
+      if (key === 'q') tryUseSkill('adrenaline');
+      if (key === 'e') tryUseSkill('shockwave');
     }
 
     function onKeyUp(event) {
@@ -394,7 +424,7 @@
 
     function onWheel(event) {
       if (!state.running) return;
-      const order = ['pistol', 'shotgun', 'smg'];
+      const order = ['pistol', 'shotgun', 'smg', 'rifle', 'revolver'];
       const currentIndex = order.indexOf(state.weaponKey);
       const direction = event.deltaY > 0 ? 1 : -1;
       for (let i = 1; i <= order.length; i++) {
@@ -640,6 +670,7 @@
       addStaticBox(wallThickness, wallHeight, ARENA_HALF * 2, ARENA_HALF + wallThickness * 0.5, wallHeight * 0.5, 0, materials.wall);
 
       buildCityBlocks();
+      buildIndustrialSector();
 
       const obstacleCount = 42;
       for (let index = 0; index < obstacleCount; index++) {
@@ -715,6 +746,77 @@
       for (let i = 0; i < lots.length; i++) {
         createBuildingBlock(lots[i]);
       }
+    }
+
+    function buildIndustrialSector() {
+      reserveBuildingLot(-60, -8, 26, 22);
+
+      const yard = new THREE.Mesh(new THREE.PlaneGeometry(22, 18), materials.concreteBlock);
+      yard.rotation.x = -Math.PI / 2;
+      yard.position.set(-60, 0.06, -8);
+      yard.receiveShadow = true;
+      scene.add(yard);
+      registerSplatterSurface(yard);
+
+      addStaticBox(22.5, 1.2, 0.6, -60, 0.6, -17.4, materials.wall);
+      addStaticBox(22.5, 1.2, 0.6, -60, 0.6, 1.4, materials.wall);
+      addStaticBox(0.6, 1.2, 18.4, -71.2, 0.6, -8, materials.wall);
+
+      createDestructibleBlock({
+        type: 'concrete',
+        width: 3.8,
+        height: 2.0,
+        depth: 2.2,
+        x: -64,
+        z: -4,
+        hp: 108,
+        mass: 0,
+        material: materials.concreteBlock,
+        fragmentMin: 6,
+        fragmentMax: 10
+      });
+
+      createDestructibleBlock({
+        type: 'rock',
+        width: 3.2,
+        height: 2.4,
+        depth: 2.6,
+        x: -54,
+        z: -12,
+        hp: 94,
+        mass: 0,
+        material: materials.rock,
+        fragmentMin: 5,
+        fragmentMax: 9
+      });
+
+      createExplosiveBarrel(-58, -8);
+      createExplosiveBarrel(-62, -11);
+      createExplosiveBarrel(-56, -13);
+      createBreakableCrate(2.1, 1.7, 2.3, -63, -14);
+      createBreakableCrate(2.4, 1.9, 2.1, -55, -5);
+    }
+
+    function createExplosiveBarrel(x, z) {
+      createDestructibleBlock({
+        type: 'barrel',
+        width: 1.0,
+        height: 1.5,
+        depth: 1.0,
+        x,
+        z,
+        hp: 38,
+        mass: 3.6,
+        material: new THREE.MeshStandardMaterial({
+          color: 0xa83232,
+          roughness: 0.45,
+          metalness: 0.62,
+          emissive: 0x2f0909,
+          emissiveIntensity: 0.45
+        }),
+        fragmentMin: 5,
+        fragmentMax: 8
+      });
     }
 
     function createBuildingBlock(config) {
@@ -975,6 +1077,8 @@
     function spawnWeaponPickups() {
       createWeaponPickup('shotgun', -34, 28, 0x7cc7ff);
       createWeaponPickup('smg', 30, -34, 0xffcc68);
+      createWeaponPickup('rifle', 54, 24, 0x78ffa8);
+      createWeaponPickup('revolver', -58, -20, 0xff8a8a);
     }
 
     function createWeaponPickup(weaponKey, x, z, color) {
@@ -1203,6 +1307,28 @@
         return;
       }
 
+      if (weaponKey === 'rifle') {
+        addCharacterPart(gunPivot, new THREE.BoxGeometry(0.16, 0.18, 0.72), materials.weapon, 0, 0.04, 0.52);
+        const barrel = addCharacterPart(gunPivot, new THREE.CylinderGeometry(0.03, 0.03, 0.44, 8), materials.weaponDark, 0, 0.06, 0.98);
+        barrel.rotation.x = Math.PI * 0.5;
+        const stock = addCharacterPart(gunPivot, new THREE.BoxGeometry(0.1, 0.1, 0.44), materials.weaponDark, 0.12, -0.02, 0.08);
+        stock.rotation.z = -0.12;
+        const mag = addCharacterPart(gunPivot, new THREE.BoxGeometry(0.12, 0.3, 0.12), materials.weaponDark, 0, -0.13, 0.46);
+        mag.rotation.x = -0.2;
+        addCharacterPart(gunPivot, new THREE.BoxGeometry(0.14, 0.24, 0.16), materials.weapon, 0, -0.06, 0.2);
+        return;
+      }
+
+      if (weaponKey === 'revolver') {
+        addCharacterPart(gunPivot, new THREE.BoxGeometry(0.14, 0.28, 0.16), materials.weaponDark, 0, -0.08, 0.16);
+        const drum = addCharacterPart(gunPivot, new THREE.CylinderGeometry(0.085, 0.085, 0.1, 10), materials.weapon, 0, 0.04, 0.34);
+        drum.rotation.x = Math.PI * 0.5;
+        const barrel = addCharacterPart(gunPivot, new THREE.CylinderGeometry(0.032, 0.032, 0.42, 8), materials.weaponDark, 0, 0.06, 0.68);
+        barrel.rotation.x = Math.PI * 0.5;
+        addCharacterPart(gunPivot, new THREE.BoxGeometry(0.1, 0.08, 0.3), materials.weapon, 0, 0.1, 0.44);
+        return;
+      }
+
       addCharacterPart(gunPivot, new THREE.BoxGeometry(0.13, 0.26, 0.14), materials.weapon, 0, -0.06, 0.18);
       const mag = addCharacterPart(gunPivot, new THREE.BoxGeometry(0.11, 0.34, 0.1), materials.weaponDark, 0, -0.14, 0.34);
       mag.rotation.x = -0.12;
@@ -1389,7 +1515,7 @@
       if (isMoving) movement.normalize();
 
       const speedBase = state.keys.shift ? player.sprintSpeed : player.moveSpeed;
-      const speed = speedBase * state.moveSpeedMul;
+      const speed = speedBase * state.moveSpeedMul * getAdrenalineActiveMul();
       const currentVelocity = player.body.getLinearVelocity();
       setBodyVelocity(player.body, movement.x * speed, currentVelocity.y(), movement.z * speed);
 
@@ -1517,7 +1643,8 @@
       const weaponState = state.weapons[state.weaponKey];
       if (!weapon || !weaponState || weaponState.ammo <= 0) return;
       const now = performance.now();
-      const cooldownMs = weapon.cooldown * (1 / state.fireRateMul);
+      const adrenalineFireRateMul = state.skills.adrenaline.active > 0 ? 1.22 : 1;
+      const cooldownMs = weapon.cooldown * (1 / (state.fireRateMul * adrenalineFireRateMul));
       if (now - state.lastShotMs < cooldownMs) return;
       state.lastShotMs = now;
       weaponState.ammo -= 1;
@@ -1532,7 +1659,7 @@
         shootRaycast({
           origin,
           direction: shotDirection,
-          damage: weapon.damage * state.damageMul,
+          damage: weapon.damage * state.damageMul * (state.skills.adrenaline.active > 0 ? 1.16 : 1),
           maxDistance: weapon.maxDistance,
           tracerLife: weapon.tracerLife
         });
@@ -2068,7 +2195,7 @@
       const destructible = destructibles[destructibleIndex];
       if (!destructible) return;
 
-      const damageMul = destructible.type === 'crate' ? 0.9 : 0.75;
+      const damageMul = destructible.type === 'crate' ? 0.9 : (destructible.type === 'barrel' ? 1.25 : 0.75);
       destructible.hp -= damage * damageMul;
       const hitDir = direction || new THREE.Vector3(0, 0, 1);
 
@@ -2086,6 +2213,8 @@
       if (destructible.type === 'crate') {
         applyCrateDamageVisual(destructible);
         spawnWoodSplinters(destructible.mesh.position, 10, 0.42, 20);
+      } else if (destructible.type === 'barrel') {
+        spawnSparkBurst(destructible.mesh.position.clone(), 0xff8f65, 10, 0.24, 18);
       } else {
         spawnSparkBurst(destructible.mesh.position.clone(), 0xb7aea1, 7, 0.18, 16);
       }
@@ -2125,6 +2254,9 @@
 
       if (destructible.type === 'crate') {
         spawnWoodSplinters(destructible.mesh.position, 24, 0.62, 34);
+      } else if (destructible.type === 'barrel') {
+        spawnSparkBurst(destructible.mesh.position.clone(), 0xff8b4a, 24, 0.42, 36);
+        applyRadialImpulse(destructible.mesh.position.clone(), 6.2, 20, 9);
       } else {
         spawnSparkBurst(destructible.mesh.position.clone(), 0xc7bba4, 10, 0.24, 20);
       }
@@ -2149,6 +2281,8 @@
         let material;
         if (destructible.type === 'crate') {
           material = new THREE.MeshStandardMaterial({ color: 0x6f4a2d, roughness: 0.88, metalness: 0.03, transparent: true, opacity: 1 });
+        } else if (destructible.type === 'barrel') {
+          material = new THREE.MeshStandardMaterial({ color: 0x8f3b3b, roughness: 0.58, metalness: 0.52, transparent: true, opacity: 1 });
         } else if (destructible.type === 'rock') {
           material = new THREE.MeshStandardMaterial({ color: 0x4a4d55, roughness: 0.95, metalness: 0.02, transparent: true, opacity: 1 });
         } else {
@@ -2608,6 +2742,104 @@
       return String(min).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
     }
 
+    function getXpNeededForLevel(level) {
+      return Math.max(100, Math.floor(100 * Math.pow(level, 1.35)));
+    }
+
+    function grantXp(amount, sourcePosition) {
+      const xpGain = Math.max(0, Math.round(amount || 0));
+      if (xpGain <= 0) return;
+      state.xp += xpGain;
+
+      while (state.xp >= state.nextLevelXp) {
+        state.xp -= state.nextLevelXp;
+        state.level += 1;
+        state.perkPoints += 1;
+        state.nextLevelXp = getXpNeededForLevel(state.level);
+        state.health = Math.min(state.maxHealth, state.health + 12);
+        addFloatingScore((sourcePosition || player.root.position).clone().add(new THREE.Vector3(0, 2.1, 0)), 'LEVEL UP ' + state.level, '#8be7ff');
+      }
+    }
+
+    function updateSkills(dt) {
+      const adrenaline = state.skills.adrenaline;
+      const shockwave = state.skills.shockwave;
+      if (adrenaline) {
+        adrenaline.cooldown = Math.max(0, adrenaline.cooldown - dt);
+        adrenaline.active = Math.max(0, adrenaline.active - dt);
+      }
+      if (shockwave) {
+        shockwave.cooldown = Math.max(0, shockwave.cooldown - dt);
+      }
+    }
+
+    function getAdrenalineActiveMul() {
+      const adrenaline = state.skills.adrenaline;
+      if (!adrenaline || adrenaline.active <= 0) return 1;
+      return 1.34;
+    }
+
+    function tryUseSkill(skillKey) {
+      const skill = state.skills[skillKey];
+      if (!skill || !skill.unlocked || skill.cooldown > 0) return;
+
+      if (skillKey === 'adrenaline') {
+        skill.active = skill.duration;
+        skill.cooldown = skill.cooldownMax;
+        addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.4, 0)), 'ADRENALIN AKTIV', '#88f0ff');
+        return;
+      }
+
+      if (skillKey === 'shockwave') {
+        skill.cooldown = skill.cooldownMax;
+        const origin = player.root.position.clone();
+        spawnSparkBurst(origin.clone().add(new THREE.Vector3(0, 0.8, 0)), 0x98dcff, 24, 0.28, 32);
+        applyRadialImpulse(origin, 7.2, 22, 8);
+        addFloatingScore(origin.clone().add(new THREE.Vector3(0, 2.4, 0)), 'SCHOCKWELLE', '#9fd8ff');
+      }
+    }
+
+    function getAvailablePerkOptions() {
+      const options = [];
+      if (!state.perks.executioner) options.push({ id: 'perk:executioner', label: '[Perk] Executioner (+18% Schaden)' });
+      if (!state.perks.juggernaut) options.push({ id: 'perk:juggernaut', label: '[Perk] Juggernaut (+35 Max HP)' });
+      if (!state.perks.scavenger) options.push({ id: 'perk:scavenger', label: '[Perk] Scavenger (mehr Drops/Ammo)' });
+      if (!state.perks.gunslinger) options.push({ id: 'perk:gunslinger', label: '[Perk] Gunslinger (+12% Speed, +8% Feuerrate)' });
+      if (!state.perks.skill_adrenaline) options.push({ id: 'perk:skill_adrenaline', label: '[Skill] Adrenalin (Q)' });
+      if (!state.perks.skill_shockwave) options.push({ id: 'perk:skill_shockwave', label: '[Skill] Schockwelle (E)' });
+      return options;
+    }
+
+    function applyPerkById(perkId) {
+      if (perkId === 'executioner' && !state.perks.executioner) {
+        state.perks.executioner = true;
+        state.damageMul *= 1.18;
+      }
+      if (perkId === 'juggernaut' && !state.perks.juggernaut) {
+        state.perks.juggernaut = true;
+        state.maxHealth += 35;
+        state.health = Math.min(state.maxHealth, state.health + 35);
+      }
+      if (perkId === 'scavenger' && !state.perks.scavenger) {
+        state.perks.scavenger = true;
+        state.dropChanceMul *= 1.35;
+        state.ammoGainMul *= 1.3;
+      }
+      if (perkId === 'gunslinger' && !state.perks.gunslinger) {
+        state.perks.gunslinger = true;
+        state.moveSpeedMul *= 1.12;
+        state.fireRateMul *= 1.08;
+      }
+      if (perkId === 'skill_adrenaline' && !state.perks.skill_adrenaline) {
+        state.perks.skill_adrenaline = true;
+        state.skills.adrenaline.unlocked = true;
+      }
+      if (perkId === 'skill_shockwave' && !state.perks.skill_shockwave) {
+        state.perks.skill_shockwave = true;
+        state.skills.shockwave.unlocked = true;
+      }
+    }
+
     function checkProgress() {
       if (!state.running || state.upgradeMode) return;
       if (zombies.length === 0 && deadZombies.length === 0 && state.waveInProgress) {
@@ -2620,7 +2852,10 @@
       state.running = false;
       state.upgradeMode = true;
       const options = pickUpgradeOptions(3);
-      if (hud.upgradeTitle) hud.upgradeTitle.textContent = 'WELLE ' + state.wave + ' GESCHAFFT';
+      if (hud.upgradeTitle) {
+        const perkInfo = state.perkPoints > 0 ? ' · Perk-Punkte: ' + state.perkPoints : '';
+        hud.upgradeTitle.textContent = 'WELLE ' + state.wave + ' GESCHAFFT' + perkInfo;
+      }
       if (hud.upgradeOptions) {
         hud.upgradeOptions.innerHTML = options.map((opt, index) =>
           '<button class="upgrade-btn" data-upgrade="' + opt.id + '">' + (index + 1) + '. ' + opt.label + '</button>'
@@ -2639,23 +2874,58 @@
     }
 
     function pickUpgradeOptions(count) {
-      const all = Array.isArray(runtimeConfig.upgrades) && runtimeConfig.upgrades.length
+      const base = Array.isArray(runtimeConfig.upgrades) && runtimeConfig.upgrades.length
         ? runtimeConfig.upgrades
         : [
-          { id: 'damage', label: 'Mehr Schaden (+20%)' },
-          { id: 'speed', label: 'Mehr Speed (+15%)' },
-          { id: 'max_hp', label: 'Max HP +25' },
-          { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
-          { id: 'reserve', label: 'Mehr Reserve (+50%)' },
-          { id: 'firerate', label: 'Feuerrate +15%' }
-        ];
+        { id: 'damage', label: 'Mehr Schaden (+20%)' },
+        { id: 'speed', label: 'Mehr Speed (+15%)' },
+        { id: 'max_hp', label: 'Max HP +25' },
+        { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
+        { id: 'reserve', label: 'Mehr Reserve (+50%)' },
+        { id: 'firerate', label: 'Feuerrate +15%' }
+      ];
+      const all = base.slice();
+
+      if (state.perkPoints > 0) {
+        const perkOptions = getAvailablePerkOptions();
+        for (let i = 0; i < perkOptions.length; i++) {
+          if (!all.find((entry) => entry.id === perkOptions[i].id)) all.push(perkOptions[i]);
+        }
+      }
+
       if (gameLogic.pickUpgradeOptions) {
         return gameLogic.pickUpgradeOptions(count, all);
       }
-      return all.slice(0, count);
+
+      const chosen = [];
+      const pool = all.slice();
+
+      if (state.perkPoints > 0) {
+        const perkOptions = getAvailablePerkOptions();
+        if (perkOptions.length) {
+          const forcedPerk = perkOptions[Math.floor(Math.random() * perkOptions.length)];
+          chosen.push(forcedPerk);
+        }
+        for (let i = 0; i < perkOptions.length; i++) {
+          if (!chosen.find((entry) => entry.id === perkOptions[i].id)) pool.push(perkOptions[i]);
+        }
+      }
+
+      while (chosen.length < count && pool.length) {
+        const idx = Math.floor(Math.random() * pool.length);
+        chosen.push(pool[idx]);
+        pool.splice(idx, 1);
+      }
+      return chosen;
     }
 
     function applyUpgradeById(id) {
+      if (id && id.indexOf('perk:') === 0) {
+        const perkId = id.slice(5);
+        applyPerkById(perkId);
+        state.perkPoints = Math.max(0, state.perkPoints - 1);
+        return;
+      }
       if (id === 'damage') state.damageMul *= 1.2;
       if (id === 'speed') state.moveSpeedMul *= 1.15;
       if (id === 'max_hp') {
@@ -2899,9 +3169,15 @@
       const baseScore = zombie && zombie.scoreValue ? zombie.scoreValue : 130;
       const gained = Math.round(baseScore * state.comboMultiplier);
       state.score += gained;
+      const xpGain = Math.round(baseScore * (0.16 + (state.comboMultiplier - 1) * 0.04));
+      grantXp(xpGain, hitPoint || (zombie ? zombie.root.position : player.root.position));
       if (state.score > state.highScore) {
         state.highScore = state.score;
         window.localStorage.setItem(storageKeys.highscore, String(state.highScore));
+      }
+
+      if (state.perks.scavenger) {
+        state.health = Math.min(state.maxHealth, state.health + 2);
       }
 
       addFloatingScore((hitPoint || zombie.root.position).clone().add(new THREE.Vector3(0, 1.25, 0)), '+' + gained, '#ffd58b');
@@ -2981,14 +3257,28 @@
     function trySpawnDrop(position) {
       const maxDrops = Number(runtimeConfig.drops && runtimeConfig.drops.maxItems) || 10;
       if (itemDrops.length >= maxDrops) return;
-      const table = runtimeConfig.drops && Array.isArray(runtimeConfig.drops.table)
+      let table = runtimeConfig.drops && Array.isArray(runtimeConfig.drops.table)
         ? runtimeConfig.drops.table
         : [{ type: 'heal', chance: 0.18 }, { type: 'ammo', chance: 0.08 }];
+
+      if (state.dropChanceMul !== 1) {
+        table = table.map((entry) => ({
+          type: entry.type,
+          chance: Math.min(0.8, Math.max(0, Number(entry.chance || 0) * state.dropChanceMul))
+        }));
+      }
+
       let type = gameLogic.rollDropType ? gameLogic.rollDropType(table) : null;
       if (!type && !gameLogic.rollDropType) {
         const roll = Math.random();
-        if (roll < 0.18) type = 'heal';
-        else if (roll < 0.26) type = 'ammo';
+        let accum = 0;
+        for (let i = 0; i < table.length; i++) {
+          accum += Math.max(0, Number(table[i].chance || 0));
+          if (roll < accum) {
+            type = table[i].type;
+            break;
+          }
+        }
       }
       if (type) {
         spawnItemDrop(type, position.clone());
@@ -3033,8 +3323,9 @@
             addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+25 HP', '#8bffab');
           } else {
             const weapon = getCurrentWeaponState();
-            weapon.reserve += 12;
-            addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+12 Ammo', '#ffe18f');
+            const ammoGain = Math.max(8, Math.round(12 * state.ammoGainMul));
+            weapon.reserve += ammoGain;
+            addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.1, 0)), '+' + ammoGain + ' Ammo', '#ffe18f');
           }
           scene.remove(drop.mesh);
           if (drop.mesh.material) drop.mesh.material.dispose();
@@ -3570,9 +3861,22 @@
       hud.score.textContent = state.score;
       hud.highscore.textContent = state.highScore;
       hud.wave.textContent = state.wave;
+      if (hud.level) hud.level.textContent = String(state.level);
+      if (hud.xp) hud.xp.textContent = state.xp + ' / ' + state.nextLevelXp;
       hud.weapon.textContent = weaponDef ? weaponDef.label : '-';
       hud.ammo.textContent = state.reloading ? '...' : (weaponState ? weaponState.ammo : 0);
       hud.reserve.textContent = weaponState ? weaponState.reserve : 0;
+      if (hud.skills) {
+        const adrenaline = state.skills.adrenaline;
+        const shockwave = state.skills.shockwave;
+        const adrenalineText = adrenaline.unlocked
+          ? ('Q:' + (adrenaline.active > 0 ? 'AKTIV ' + adrenaline.active.toFixed(1) + 's' : (adrenaline.cooldown > 0 ? adrenaline.cooldown.toFixed(1) + 's' : 'bereit')))
+          : 'Q:-';
+        const shockwaveText = shockwave.unlocked
+          ? ('E:' + (shockwave.cooldown > 0 ? shockwave.cooldown.toFixed(1) + 's' : 'bereit'))
+          : 'E:-';
+        hud.skills.textContent = adrenalineText + ' · ' + shockwaveText;
+      }
       const comboText = 'x' + state.comboMultiplier + (state.spreeText ? ' · ' + state.spreeText : '');
       hud.combo.textContent = comboText;
       if (state.comboMultiplier > 1) {
