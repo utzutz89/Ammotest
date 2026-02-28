@@ -41,9 +41,27 @@ function testAdaptiveLimits() {
   assert.ok(limits.effectScale <= 1);
 }
 
+function testDirectorIntensity() {
+  const high = logic.evaluateDirectorIntensity({ healthRatio: 0.2, armorRatio: 0.1, aliveRatio: 0.8, killMomentum: 0.1 });
+  const low = logic.evaluateDirectorIntensity({ healthRatio: 0.95, armorRatio: 0.8, aliveRatio: 0.2, killMomentum: 0.8 });
+  assert.ok(high > low);
+  assert.ok(high <= 0.95 && low >= 0.12);
+}
+
+function testObjectivePlan() {
+  const survive = logic.getObjectiveForWave(5, CONFIG.objectives, 0.2);
+  const slayer = logic.getObjectiveForWave(5, CONFIG.objectives, 0.9);
+  assert.strictEqual(survive.id, 'survive');
+  assert.ok(survive.duration > 0);
+  assert.strictEqual(slayer.id, 'slayer');
+  assert.ok(slayer.targetKills > 0);
+}
+
 testWavePlan();
 testDropTable();
 testUpgradePickUnique();
 testAdaptiveLimits();
+testDirectorIntensity();
+testObjectivePlan();
 
 console.log('[ok] logic tests passed');

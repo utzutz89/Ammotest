@@ -64,6 +64,43 @@
     return { effects, debris, effectScale };
   }
 
+  function evaluateDirectorIntensity(input) {
+    const healthRatio = Math.max(0, Math.min(1, Number(input.healthRatio || 0)));
+    const armorRatio = Math.max(0, Math.min(1, Number(input.armorRatio || 0)));
+    const aliveRatio = Math.max(0, Math.min(1, Number(input.aliveRatio || 0)));
+    const killMomentum = Math.max(0, Math.min(1, Number(input.killMomentum || 0)));
+    const pressure = (1 - healthRatio) * 0.45 + (1 - armorRatio) * 0.2 + aliveRatio * 0.35;
+    const relief = killMomentum * 0.22;
+    return Math.max(0.12, Math.min(0.95, pressure - relief + 0.28));
+  }
+
+  function getObjectiveForWave(waveLevel, objectiveConfig, randomValue) {
+    const cfg = objectiveConfig || {};
+    const roll = randomValue !== undefined ? randomValue : Math.random();
+    const surviveCfg = cfg.survive || {};
+    const slayerCfg = cfg.slayer || {};
+
+    if (roll < 0.45) {
+      const duration = Math.round((surviveCfg.baseDuration || 18) + waveLevel * (surviveCfg.durationPerWave || 1.5));
+      return {
+        id: 'survive',
+        label: 'Überleben: ' + duration + 's halten',
+        duration,
+        rewardScore: Number(surviveCfg.rewardScore || 220),
+        rewardXp: Number(surviveCfg.rewardXp || 65)
+      };
+    }
+
+    const kills = Math.round((slayerCfg.baseKills || 6) + waveLevel * (slayerCfg.killsPerWave || 1));
+    return {
+      id: 'slayer',
+      label: 'Jagd: ' + kills + ' Kills erreichen',
+      targetKills: kills,
+      rewardScore: Number(slayerCfg.rewardScore || 260),
+      rewardXp: Number(slayerCfg.rewardXp || 75)
+    };
+  }
+
   function createMeshPool() {
     const buckets = new Map();
     function getBucket(key) {
@@ -98,6 +135,8 @@
     pickUpgradeOptions,
     rollDropType,
     computeAdaptiveLimits,
+    evaluateDirectorIntensity,
+    getObjectiveForWave,
     createMeshPool
   };
   root.AmmoGameLogic = api;

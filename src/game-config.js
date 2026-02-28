@@ -59,6 +59,29 @@
         laneSpawnRatio: 0.2
       }
     },
+    director: {
+      initialSpawnRatio: 0.55,
+      reinforcementBatchMin: 1,
+      reinforcementBatchMax: 4,
+      reinforcementIntervalMin: 1.3,
+      reinforcementIntervalMax: 3.8,
+      maxAliveFactor: 0.48
+    },
+    objectives: {
+      enabled: true,
+      survive: {
+        baseDuration: 18,
+        durationPerWave: 1.5,
+        rewardScore: 220,
+        rewardXp: 65
+      },
+      slayer: {
+        baseKills: 6,
+        killsPerWave: 1,
+        rewardScore: 260,
+        rewardXp: 75
+      }
+    },
     upgrades: [
       { id: 'damage', label: 'Mehr Schaden (+20%)' },
       { id: 'speed', label: 'Mehr Speed (+15%)' },

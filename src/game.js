@@ -100,8 +100,22 @@
       hitFlash: 0,
       canStartNextWave: false,
       waveInProgress: true,
+      waveSpawnRemaining: 0,
+      waveSpawnCursor: 0,
+      waveSpawnAmount: 0,
       dropChanceMul: 1,
       ammoGainMul: 1,
+      director: {
+        intensity: 0.34,
+        spawnTimer: 0,
+        status: 'Stabil'
+      },
+      objective: {
+        active: null,
+        completed: false,
+        progress: 0,
+        rewardGiven: false
+      },
       perks: {
         executioner: false,
         juggernaut: false,
@@ -147,6 +161,8 @@
       ammo: document.getElementById('ammo'),
       reserve: document.getElementById('reserve'),
       skills: document.getElementById('skills'),
+      directorStatus: document.getElementById('director-status'),
+      objectiveStatus: document.getElementById('objective-status'),
       combo: document.getElementById('combo'),
       hitFlash: document.getElementById('hit-flash'),
       floatingLayer: document.getElementById('floating-score-layer'),
@@ -267,6 +283,8 @@
         updateSkills(dt);
         updatePlayer(dt);
         updateZombies(dt);
+        updateObjective(dt);
+        updateDirector(dt);
         physicsWorld.stepSimulation(dt, perfState.lowPerf ? 5 : 8);
         syncDynamicObjects();
         updateEffects(dt);
@@ -1478,12 +1496,29 @@
         ? gameLogic.getWaveSpawnPlan(waveLevel, runtimeConfig.zombies && runtimeConfig.zombies.wave)
         : null;
       const amount = plan ? plan.amount : Math.min(8 + waveLevel * 3, 54);
+      state.waveSpawnAmount = amount;
+      state.waveSpawnCursor = 0;
+      state.waveSpawnRemaining = amount;
+      state.director.spawnTimer = 0.2;
+      state.director.intensity = 0.34;
+      state.director.status = 'Stabil';
+      const initialRatio = Number(runtimeConfig.director && runtimeConfig.director.initialSpawnRatio) || 0.55;
+      const initialSpawn = Math.max(3, Math.min(amount, Math.round(amount * initialRatio)));
+      spawnWaveBatch(waveLevel, initialSpawn, plan, amount);
+      beginWaveObjective(waveLevel);
+      state.waveInProgress = true;
+    }
+
+    function spawnWaveBatch(waveLevel, count, plan, totalAmount) {
+      const amount = totalAmount || state.waveSpawnAmount || 1;
       const ringRadius = plan ? plan.ringRadius : Math.min(70, 44 + waveLevel * 2.4);
       const laneSpawnCount = plan ? plan.laneSpawnCount : (waveLevel >= 4 ? Math.floor(amount * 0.2) : 0);
       const safeRadius = plan ? plan.safeRadius : 22;
       const safeRadiusSq = safeRadius * safeRadius;
+      const startIndex = state.waveSpawnCursor;
+      const endIndex = Math.min(amount, startIndex + Math.max(0, count));
 
-      for (let index = 0; index < amount; index++) {
+      for (let index = startIndex; index < endIndex; index++) {
         let x;
         let z;
         if (index < laneSpawnCount) {
@@ -1505,7 +1540,97 @@
         }
         createZombie(x, z, waveLevel, getZombieTypeForWave(waveLevel));
       }
-      state.waveInProgress = true;
+
+      const spawned = endIndex - startIndex;
+      state.waveSpawnCursor = endIndex;
+      state.waveSpawnRemaining = Math.max(0, state.waveSpawnRemaining - spawned);
+    }
+
+    function beginWaveObjective(waveLevel) {
+      const objectivesEnabled = !(runtimeConfig.objectives && runtimeConfig.objectives.enabled === false);
+      if (!objectivesEnabled) {
+        state.objective.active = null;
+        state.objective.completed = true;
+        state.objective.progress = 0;
+        state.objective.rewardGiven = true;
+        return;
+      }
+
+      const objective = gameLogic.getObjectiveForWave
+        ? gameLogic.getObjectiveForWave(waveLevel, runtimeConfig.objectives, Math.random())
+        : null;
+      if (objective && objective.id === 'slayer') {
+        const maxTarget = Math.max(3, Math.floor(state.waveSpawnAmount * 0.85));
+        objective.targetKills = Math.max(1, Math.min(maxTarget, Math.round(objective.targetKills || maxTarget)));
+        objective.label = 'Jagd: ' + objective.targetKills + ' Kills erreichen';
+      }
+      state.objective.active = objective;
+      state.objective.completed = !objective;
+      state.objective.progress = 0;
+      state.objective.rewardGiven = false;
+    }
+
+    function completeObjective() {
+      if (!state.objective.active || state.objective.rewardGiven) return;
+      state.objective.completed = true;
+      state.objective.rewardGiven = true;
+      const rewardScore = Math.max(0, Number(state.objective.active.rewardScore || 0));
+      const rewardXp = Math.max(0, Number(state.objective.active.rewardXp || 0));
+      state.score += rewardScore;
+      grantXp(rewardXp, player.root.position.clone());
+      addFloatingScore(player.root.position.clone().add(new THREE.Vector3(0, 2.8, 0)), 'ZIEL ERFÜLLT +' + rewardScore, '#9dffb9');
+    }
+
+    function updateObjective(dt) {
+      const objective = state.objective.active;
+      if (!objective || state.objective.completed) return;
+
+      if (objective.id === 'survive') {
+        state.objective.progress += dt;
+        if (state.objective.progress >= objective.duration) {
+          completeObjective();
+        }
+      }
+    }
+
+    function updateDirector(dt) {
+      if (!state.running || !state.waveInProgress) return;
+      const plan = gameLogic.getWaveSpawnPlan
+        ? gameLogic.getWaveSpawnPlan(state.wave, runtimeConfig.zombies && runtimeConfig.zombies.wave)
+        : null;
+      const waveAmount = plan ? plan.amount : Math.max(1, state.waveSpawnAmount || 1);
+      const aliveRatio = Math.min(1, zombies.length / Math.max(1, Math.round(waveAmount * 0.52)));
+      const healthRatio = state.maxHealth > 0 ? state.health / state.maxHealth : 0;
+      const armorRatio = state.maxArmor > 0 ? state.armor / state.maxArmor : 0;
+      const killMomentum = Math.min(1, state.comboMultiplier / 5);
+      const targetIntensity = gameLogic.evaluateDirectorIntensity
+        ? gameLogic.evaluateDirectorIntensity({ healthRatio, armorRatio, aliveRatio, killMomentum })
+        : 0.35;
+
+      state.director.intensity = THREE.MathUtils.lerp(state.director.intensity, targetIntensity, Math.min(1, dt * 2.5));
+
+      if (state.director.intensity < 0.33) state.director.status = 'Entlastung';
+      else if (state.director.intensity > 0.67) state.director.status = 'Druck';
+      else state.director.status = 'Stabil';
+
+      if (state.waveSpawnRemaining <= 0) return;
+
+      const maxAliveFactor = Number(runtimeConfig.director && runtimeConfig.director.maxAliveFactor) || 0.48;
+      const maxAlive = Math.max(4, Math.round(waveAmount * maxAliveFactor));
+      if (zombies.length >= maxAlive) return;
+
+      state.director.spawnTimer -= dt;
+      if (state.director.spawnTimer > 0) return;
+
+      const minInterval = Number(runtimeConfig.director && runtimeConfig.director.reinforcementIntervalMin) || 1.3;
+      const maxInterval = Number(runtimeConfig.director && runtimeConfig.director.reinforcementIntervalMax) || 3.8;
+      const minBatch = Number(runtimeConfig.director && runtimeConfig.director.reinforcementBatchMin) || 1;
+      const maxBatch = Number(runtimeConfig.director && runtimeConfig.director.reinforcementBatchMax) || 4;
+
+      const pressureBatch = THREE.MathUtils.lerp(minBatch, maxBatch, state.director.intensity);
+      const batch = Math.max(minBatch, Math.min(maxBatch, Math.round(pressureBatch)));
+      spawnWaveBatch(state.wave, batch, plan, waveAmount);
+      state.director.spawnTimer = THREE.MathUtils.lerp(maxInterval, minInterval, state.director.intensity);
     }
 
     function updatePlayer(dt) {
@@ -2852,7 +2977,10 @@
 
     function checkProgress() {
       if (!state.running || state.upgradeMode) return;
-      if (zombies.length === 0 && deadZombies.length === 0 && state.waveInProgress) {
+      const noWaveEntities = zombies.length === 0 && deadZombies.length === 0;
+      const noPendingSpawns = state.waveSpawnRemaining <= 0;
+      const objectiveDone = state.objective.completed || !state.objective.active;
+      if (noWaveEntities && noPendingSpawns && objectiveDone && state.waveInProgress) {
         state.waveInProgress = false;
         openUpgradeOverlay();
       }
@@ -3164,6 +3292,12 @@
     function onZombieKilled(zombie, hitPoint) {
       if (zombie) zombie.scored = true;
       state.totalKills += 1;
+      if (state.objective.active && !state.objective.completed && state.objective.active.id === 'slayer') {
+        state.objective.progress += 1;
+        if (state.objective.progress >= Number(state.objective.active.targetKills || 0)) {
+          completeObjective();
+        }
+      }
       const now = performance.now();
       if (now - state.lastKillMs < 1800) {
         state.comboMultiplier = Math.min(5, state.comboMultiplier + 1);
@@ -3899,6 +4033,27 @@
           ? ('E:' + (shockwave.cooldown > 0 ? shockwave.cooldown.toFixed(1) + 's' : 'bereit'))
           : 'E:-';
         hud.skills.textContent = adrenalineText + ' · ' + shockwaveText;
+      }
+      if (hud.directorStatus) {
+        const intensityPct = Math.round(state.director.intensity * 100);
+        hud.directorStatus.textContent = state.director.status + ' (' + intensityPct + '%)';
+      }
+      if (hud.objectiveStatus) {
+        const objective = state.objective.active;
+        if (!objective) {
+          hud.objectiveStatus.textContent = '-';
+        } else if (state.objective.completed) {
+          hud.objectiveStatus.textContent = 'Erfüllt: ' + objective.label;
+        } else if (objective.id === 'survive') {
+          const left = Math.max(0, Math.ceil((objective.duration || 0) - state.objective.progress));
+          hud.objectiveStatus.textContent = objective.label + ' · ' + left + 's';
+        } else if (objective.id === 'slayer') {
+          const target = Math.max(1, Number(objective.targetKills || 1));
+          const progress = Math.min(target, Math.round(state.objective.progress));
+          hud.objectiveStatus.textContent = objective.label + ' · ' + progress + '/' + target;
+        } else {
+          hud.objectiveStatus.textContent = objective.label;
+        }
       }
       const comboText = 'x' + state.comboMultiplier + (state.spreeText ? ' · ' + state.spreeText : '');
       hud.combo.textContent = comboText;
