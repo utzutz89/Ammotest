@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 ### Added
+- Added player armor system with HUD tracking, armor mitigation in melee damage flow, and armor drops.
+- Added AI Director wave pacing with adaptive reinforcement batching based on player pressure/intensity.
+- Added dynamic wave objectives (Survive/Slayer) with reward payout integration (score/xp).
+- Added combat weapon mods in upgrade draft (crit chance, brute damage bonus, destructible damage bonus, ammo refund).
+- Added elite zombie scaling for later waves (boosted combat stats and score values).
+- Added map landmark POIs (fuel station, depot, park) and expanded lane spawn points for richer encounter routing.
 - Added modular gameplay/config split with new runtime modules: `src/game-config.js`, `src/game-logic.js`, `src/progression.js`, and `src/debug-overlay.js`.
 - Added persistent meta-progression (meta points, permanent weapon unlock persistence, passive run bonuses) via localStorage.
 - Added F3 debug telemetry overlay (FPS, draw calls, active effects/decals/debris, physics count, pooled mesh stats).
@@ -51,6 +57,8 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added periodic crate respawn system (every 3 waves) using remembered spawn points.
 
 ### Changed
+- Changed HUD to include live Director/Objectives/Mods status rows.
+- Changed wave completion gating so upgrades trigger only after pending spawns and active objectives are resolved.
 - Updated `index.html` and single-file bundling pipeline to include new gameplay modules while preserving `file://` offline startup behavior.
 - Reworked gore death pipeline to support intensity scaling and post-impact blood events for detached limbs.
 - Updated adaptive FX/debris limits to be computed dynamically from runtime performance pressure.

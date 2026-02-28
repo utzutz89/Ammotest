@@ -21,12 +21,18 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - EXP/Level-System mit skalierender XP-Kurve, Level-Up-Heal und Perk-Punkten
 - Perk-/Skill-System in der Wave-Upgrade-Auswahl (u.a. Executioner, Juggernaut, Scavenger, Gunslinger)
 - aktive Skills auf Tastatur (Q: Adrenalin-Buff, E: Schockwelle mit radialem Impuls)
+- Armor-System (Ruestung) mit eigener HUD-Anzeige und Armor-Drops als zusaetzlicher Defensiv-Layer
+- AI-Director fuer dynamisches Wave-Pacing (adaptive Reinforcements je nach Druck/Zustand)
+- dynamische Wave-Objectives (Survive/Slayer) mit Bonus-Belohnungen (Score/XP)
+- Combat-Mods im Upgrade-Pool (Krit, Brute-Bonus, Objekt-Damage, Ammo-Refund)
+- Elite-Zombies ab spaeteren Wellen mit staerkeren Kampfwerten und hoehren Rewards
 - neuer Industrie-Sektor mit explosiven Faessern, schwerer Deckung und zusaetzlichen Spawn-/Loot-Hotspots
+- neue Landmark-POIs im Map-Layout (Tankstelle, Depot, Park) fuer mehr Rotations- und Kampfvarianten
 - Raycast-Hitscan fuer Schuesse mit kurzen Tracer-Linien statt langsamer Kugel-Meshes
 - Muzzle Flash (Sprite + Licht + Rauch) und Einschlag-Effekte (Funken, Staub, Impact-Decals)
 - deutlich sichtbarer Schuss-Output (hellere Tracer, staerkeres Muzzle-Flash-Licht, klarere Impact-Funken)
 - Zombie-Typen (Normal/Runner/Brute) mit Wave-abhängiger Verteilung
-- Upgrade-Auswahl zwischen Wellen, Combo-/Streak-Score, Heal-/Ammo-Drops
+- Upgrade-Auswahl zwischen Wellen, Combo-/Streak-Score, Heal-/Ammo-/Armor-Drops
 - komplettes Screen-Menuesystem (Hauptmenue, Einstellungen, Highscores, Pause, Game Over)
 - Post-Processing Pipeline (SSAO, Vignette, FXAA) mit Fallback auf direkten Renderer
 - helleres Tageslicht-Tuning (Exposure/Fog/Light-Rig/Material-Balance) fuer bessere Lesbarkeit von Strassen und Umgebung
