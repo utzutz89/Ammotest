@@ -50,6 +50,14 @@
     const raycaster = new THREE.Raycaster();
     const aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -1.15);
     const aimPoint = new THREE.Vector3();
+    const runtimeConfig = (window.AmmoGameConfig && window.AmmoGameConfig.CONFIG) || {};
+    const gameLogic = window.AmmoGameLogic || {};
+    const goreConfig = runtimeConfig.gore || {};
+    const progression = window.AmmoProgression
+      ? window.AmmoProgression.createManager(runtimeConfig.progression || {})
+      : null;
+    const debugOverlay = window.AmmoDebugOverlay ? window.AmmoDebugOverlay.createOverlay() : null;
+    const effectMeshPool = gameLogic.createMeshPool ? gameLogic.createMeshPool() : null;
 
     const state = {
       running: false,
@@ -97,47 +105,13 @@
       }
     };
 
-    const weaponDefs = {
-      pistol: {
-        label: 'Pistole',
-        damage: 34,
-        cooldown: 92,
-        magazine: 12,
-        spreadDeg: 0,
-        pellets: 1,
-        maxDistance: 60,
-        tracerLife: 0.035,
-        muzzleOffset: new THREE.Vector3(0, 0.08, 0.9)
-      },
-      shotgun: {
-        label: 'Shotgun',
-        damage: 18,
-        cooldown: 680,
-        magazine: 6,
-        spreadDeg: 18,
-        pellets: 6,
-        maxDistance: 18,
-        tracerLife: 0.03,
-        muzzleOffset: new THREE.Vector3(0, 0.12, 1.32)
-      },
-      smg: {
-        label: 'SMG',
-        damage: 18,
-        cooldown: 55,
-        magazine: 32,
-        spreadDeg: 4,
-        pellets: 1,
-        maxDistance: 60,
-        tracerLife: 0.035,
-        muzzleOffset: new THREE.Vector3(0, 0.07, 0.95)
-      }
-    };
-
-    const zombieTypeDefs = {
+    const weaponDefs = createWeaponDefs(runtimeConfig.weapons);
+    const zombieTypeDefs = (runtimeConfig.zombies && runtimeConfig.zombies.types) || {
       normal: { hpMul: 1.0, speedMul: 1.0, damageMul: 1.0, scale: 1.0, score: 130 },
       brute: { hpMul: 2.8, speedMul: 0.6, damageMul: 2.2, scale: 1.5, score: 350 },
       runner: { hpMul: 0.5, speedMul: 2.2, damageMul: 0.7, scale: 0.75, score: 80 }
     };
+    syncWeaponStateWithDefs();
 
     const hud = {
       health: document.getElementById('health'),
@@ -214,14 +188,15 @@
       new THREE.Vector3(52, 1.1, 7)
     ];
     const limits = {
-      effects: 360,
-      debris: 120,
+      effects: Number(runtimeConfig.limits && runtimeConfig.limits.effects) || 360,
+      debris: Number(runtimeConfig.limits && runtimeConfig.limits.debris) || 120,
       transientLights: 16
     };
     const perfState = {
       lowPerf: false,
       avgDt: 1 / 60,
-      pressureTime: 0
+      pressureTime: 0,
+      effectScale: 1
     };
     let clock = null;
 
@@ -233,6 +208,11 @@
     const lightRig = setupLighting(scene);
     buildArena();
     const player = createPlayer();
+    if (progression) {
+      progression.load();
+      progression.applyToState(state);
+      syncWeaponStateWithDefs();
+    }
     spawnWave(state.wave);
     loadSettings();
     initMenu();
@@ -290,7 +270,70 @@
       } else {
         renderer.render(scene, camera);
       }
+      if (debugOverlay) {
+        const poolStats = effectMeshPool && effectMeshPool.stats ? effectMeshPool.stats() : null;
+        debugOverlay.update({
+          fps: dt > 0 ? 1 / dt : 0,
+          zombies: zombies.length,
+          effects: effects.length,
+          effectLimit: limits.effects,
+          decals: decals.length,
+          debris: debris.length,
+          debrisLimit: limits.debris,
+          drawCalls: renderer.info && renderer.info.render ? renderer.info.render.calls : 0,
+          physicsBodies: dynamicObjects.length,
+          lowPerf: perfState.lowPerf,
+          cachedMeshes: poolStats ? poolStats.cachedMeshes : undefined
+        }, dt);
+      }
       requestAnimationFrame(loop);
+    }
+
+    function createWeaponDefs(configWeapons) {
+      const fallback = {
+        pistol: { label: 'Pistole', damage: 34, cooldown: 92, magazine: 12, spreadDeg: 0, pellets: 1, maxDistance: 60, tracerLife: 0.035, muzzleOffset: [0, 0.08, 0.9] },
+        shotgun: { label: 'Shotgun', damage: 18, cooldown: 680, magazine: 6, spreadDeg: 18, pellets: 6, maxDistance: 18, tracerLife: 0.03, muzzleOffset: [0, 0.12, 1.32] },
+        smg: { label: 'SMG', damage: 18, cooldown: 55, magazine: 32, spreadDeg: 4, pellets: 1, maxDistance: 60, tracerLife: 0.035, muzzleOffset: [0, 0.07, 0.95] }
+      };
+      const source = (configWeapons && typeof configWeapons === 'object') ? configWeapons : fallback;
+      const keys = ['pistol', 'shotgun', 'smg'];
+      const defs = {};
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        const row = source[key] || fallback[key];
+        const muzzle = Array.isArray(row.muzzleOffset) ? row.muzzleOffset : fallback[key].muzzleOffset;
+        defs[key] = {
+          label: row.label || fallback[key].label,
+          damage: Number(row.damage) || fallback[key].damage,
+          cooldown: Number(row.cooldown) || fallback[key].cooldown,
+          magazine: Number(row.magazine) || fallback[key].magazine,
+          spreadDeg: Number(row.spreadDeg) || fallback[key].spreadDeg,
+          pellets: Number(row.pellets) || fallback[key].pellets,
+          maxDistance: Number(row.maxDistance) || fallback[key].maxDistance,
+          tracerLife: Number(row.tracerLife) || fallback[key].tracerLife,
+          muzzleOffset: new THREE.Vector3(Number(muzzle[0]) || 0, Number(muzzle[1]) || 0, Number(muzzle[2]) || 0)
+        };
+      }
+      return defs;
+    }
+
+    function syncWeaponStateWithDefs() {
+      const keys = Object.keys(weaponDefs);
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (!state.weapons[key]) state.weapons[key] = { unlocked: false, ammo: 0, reserve: 0 };
+        const weaponState = state.weapons[key];
+        const def = weaponDefs[key];
+        const defaultUnlocked = !!(runtimeConfig.weapons && runtimeConfig.weapons[key] && runtimeConfig.weapons[key].defaultUnlocked);
+        weaponState.unlocked = !!weaponState.unlocked || defaultUnlocked || key === 'pistol';
+        if (weaponState.ammo <= 0 && (weaponState.unlocked || key === 'pistol')) {
+          weaponState.ammo = def.magazine;
+        }
+        if (weaponState.reserve <= 0 && (weaponState.unlocked || key === 'pistol')) {
+          const reserveMags = Number(runtimeConfig.weapons && runtimeConfig.weapons[key] && runtimeConfig.weapons[key].defaultReserveMagazines) || (key === 'pistol' ? 4 : 3);
+          weaponState.reserve = def.magazine * reserveMags;
+        }
+      }
     }
 
     function onResize() {
@@ -311,6 +354,10 @@
 
     function onKeyDown(event) {
       const key = event.key.toLowerCase();
+      if (key === 'f3') {
+        if (debugOverlay) debugOverlay.toggle();
+        return;
+      }
       state.keys[key] = true;
       if (key === 'escape') {
         if (state.running) {
@@ -503,6 +550,21 @@
           perfState.pressureTime = Math.max(0, perfState.pressureTime - dt * 0.5);
         }
       }
+
+      if (gameLogic.computeAdaptiveLimits) {
+        const adaptive = gameLogic.computeAdaptiveLimits({
+          avgDt: perfState.avgDt,
+          lowPerf: perfState.lowPerf,
+          baseEffects: Number(runtimeConfig.limits && runtimeConfig.limits.effects) || 360,
+          baseDebris: Number(runtimeConfig.limits && runtimeConfig.limits.debris) || 120,
+          minEffects: Number(runtimeConfig.limits && runtimeConfig.limits.adaptive && runtimeConfig.limits.adaptive.minEffects) || 180,
+          minDebris: Number(runtimeConfig.limits && runtimeConfig.limits.adaptive && runtimeConfig.limits.adaptive.minDebris) || 70,
+          activeEffects: effects.length
+        });
+        limits.effects = adaptive.effects;
+        limits.debris = adaptive.debris;
+        perfState.effectScale = adaptive.effectScale;
+      }
     }
 
     function applyLowPerformanceProfile() {
@@ -516,21 +578,19 @@
         const lamp = streetLampLights[i];
         lamp.castShadow = false;
       }
-      limits.effects = 260;
-      limits.debris = 90;
       console.warn('[perf] Low-Performance-Profil aktiviert (SSAO/Lampen-Schatten reduziert).');
     }
 
     function scaleEffectCount(count, minCount) {
       const floor = minCount || 1;
       const pressure = effects.length / Math.max(1, limits.effects);
-      let scale = 1;
+      let scale = perfState.effectScale || 1;
       if (perfState.lowPerf) {
-        scale = 0.55;
+        scale = Math.min(scale, 0.55);
       } else if (pressure > 0.85) {
-        scale = 0.68;
+        scale = Math.min(scale, 0.68);
       } else if (pressure > 0.65) {
-        scale = 0.82;
+        scale = Math.min(scale, 0.82);
       }
       return Math.max(floor, Math.round(count * scale));
     }
@@ -1247,6 +1307,8 @@
         root,
         body,
         torso,
+        head,
+        jaw,
         leftUpperArm,
         rightUpperArm,
         leftLowerArm,
@@ -1272,6 +1334,9 @@
     }
 
     function getZombieTypeForWave(waveLevel) {
+      if (gameLogic.getZombieTypeForWave) {
+        return gameLogic.getZombieTypeForWave(waveLevel);
+      }
       if (waveLevel <= 2) return 'normal';
       const roll = Math.random();
       if (waveLevel >= 5 && roll < 0.15) return 'brute';
@@ -1280,10 +1345,13 @@
     }
 
     function spawnWave(waveLevel) {
-      const amount = Math.min(8 + waveLevel * 3, 54);
-      const ringRadius = Math.min(70, 44 + waveLevel * 2.4);
-      const laneSpawnCount = waveLevel >= 4 ? Math.floor(amount * 0.2) : 0;
-      const safeRadius = 22;
+      const plan = gameLogic.getWaveSpawnPlan
+        ? gameLogic.getWaveSpawnPlan(waveLevel, runtimeConfig.zombies && runtimeConfig.zombies.wave)
+        : null;
+      const amount = plan ? plan.amount : Math.min(8 + waveLevel * 3, 54);
+      const ringRadius = plan ? plan.ringRadius : Math.min(70, 44 + waveLevel * 2.4);
+      const laneSpawnCount = plan ? plan.laneSpawnCount : (waveLevel >= 4 ? Math.floor(amount * 0.2) : 0);
+      const safeRadius = plan ? plan.safeRadius : 22;
       const safeRadiusSq = safeRadius * safeRadius;
 
       for (let index = 0; index < amount; index++) {
@@ -1739,10 +1807,11 @@
     function spawnZombieDeathGore(zombie, direction, hitPoint) {
       const deathPos = zombie.root.position.clone();
       if (hitPoint) deathPos.lerp(hitPoint, 0.35);
+      const bloodIntensity = Math.max(0.5, Number(goreConfig.bloodIntensity) || 1);
 
-      spawnBloodSpray(deathPos, THREE.MathUtils.randInt(40, 60), 0.92, 58);
-      spawnBloodMist(deathPos, THREE.MathUtils.randInt(10, 12));
-      spawnGoreBurst(deathPos, direction, THREE.MathUtils.randInt(40, 60));
+      spawnBloodSpray(deathPos, Math.round(THREE.MathUtils.randInt(40, 60) * bloodIntensity), 0.92, 58 + 10 * (bloodIntensity - 1));
+      spawnBloodMist(deathPos, Math.round(THREE.MathUtils.randInt(10, 12) * bloodIntensity));
+      spawnGoreBurst(deathPos, direction, Math.round(THREE.MathUtils.randInt(40, 60) * bloodIntensity));
 
       const poolCount = THREE.MathUtils.randInt(2, 4);
       for (let i = 0; i < poolCount; i++) {
@@ -1766,6 +1835,7 @@
       spawnOrganChunks(deathPos, direction, THREE.MathUtils.randInt(3, 5));
       spawnNearbySurfaceBlood(deathPos, direction.clone().normalize(), 6.2);
       spawnNearbySurfaceBlood(deathPos, direction.clone().negate(), 4.2);
+      spawnZombieDismemberment(zombie, direction, hitPoint || deathPos);
     }
 
     function spawnGoreBurst(origin, direction, count) {
@@ -1853,6 +1923,145 @@
           )
         });
       }
+    }
+
+    function spawnZombieDismemberment(zombie, direction, hitPoint) {
+      if (!goreConfig.enabled) return;
+      if (Math.random() > (Number(goreConfig.dismemberChance) || 0.82)) return;
+
+      const candidates = [
+        { key: 'head', mesh: zombie.head, weight: 1.2 },
+        { key: 'jaw', mesh: zombie.jaw, weight: 0.7 },
+        { key: 'leftUpperArm', mesh: zombie.leftUpperArm, weight: 1 },
+        { key: 'rightUpperArm', mesh: zombie.rightUpperArm, weight: 1 },
+        { key: 'leftLowerArm', mesh: zombie.leftLowerArm, weight: 1.1 },
+        { key: 'rightLowerArm', mesh: zombie.rightLowerArm, weight: 1.1 },
+        { key: 'leftThigh', mesh: zombie.leftThigh, weight: 0.9 },
+        { key: 'rightThigh', mesh: zombie.rightThigh, weight: 0.9 },
+        { key: 'leftShin', mesh: zombie.leftShin, weight: 0.9 },
+        { key: 'rightShin', mesh: zombie.rightShin, weight: 0.9 }
+      ].filter((entry) => entry.mesh && entry.mesh.visible !== false);
+
+      const minCount = Math.max(1, Math.round(Number(goreConfig.minLimbsPerDeath) || 1));
+      const maxCount = Math.max(minCount, Math.round(Number(goreConfig.maxLimbsPerDeath) || 3));
+      const limbCount = THREE.MathUtils.randInt(minCount, Math.min(maxCount, candidates.length));
+
+      for (let i = 0; i < limbCount; i++) {
+        if (!candidates.length) break;
+        let totalWeight = 0;
+        for (let w = 0; w < candidates.length; w++) totalWeight += candidates[w].weight;
+        let roll = Math.random() * totalWeight;
+        let chosenIndex = 0;
+        for (let p = 0; p < candidates.length; p++) {
+          roll -= candidates[p].weight;
+          if (roll <= 0) {
+            chosenIndex = p;
+            break;
+          }
+        }
+
+        const entry = candidates[chosenIndex];
+        candidates.splice(chosenIndex, 1);
+        spawnDetachedLimb(entry.mesh, direction, hitPoint || zombie.root.position);
+      }
+    }
+
+    function spawnDetachedLimb(sourceMesh, direction, hitPoint) {
+      if (!sourceMesh || !sourceMesh.geometry) return;
+      const maxActive = Math.max(8, Math.round(Number(goreConfig.limbMaxActive) || 36));
+      let activeLimbs = 0;
+      for (let i = 0; i < debris.length; i++) {
+        if (debris[i] && debris[i].kind === 'limb') activeLimbs++;
+      }
+      if (activeLimbs >= maxActive) {
+        for (let i = 0; i < debris.length; i++) {
+          if (debris[i] && debris[i].kind === 'limb') {
+            removeDebris(i);
+            break;
+          }
+        }
+      }
+
+      const worldPos = new THREE.Vector3();
+      const worldQuat = new THREE.Quaternion();
+      const worldScale = new THREE.Vector3();
+      sourceMesh.getWorldPosition(worldPos);
+      sourceMesh.getWorldQuaternion(worldQuat);
+      sourceMesh.getWorldScale(worldScale);
+
+      const geometry = sourceMesh.geometry.clone();
+      const material = sourceMesh.material && typeof sourceMesh.material.clone === 'function'
+        ? sourceMesh.material.clone()
+        : new THREE.MeshStandardMaterial({ color: 0x7f5d4e, roughness: 0.85, metalness: 0.05 });
+      material.transparent = true;
+      material.opacity = 1;
+
+      const limbMesh = new THREE.Mesh(geometry, material);
+      limbMesh.position.copy(worldPos);
+      limbMesh.quaternion.copy(worldQuat);
+      limbMesh.scale.copy(worldScale);
+      limbMesh.castShadow = true;
+      limbMesh.receiveShadow = true;
+      scene.add(limbMesh);
+
+      geometry.computeBoundingBox();
+      const bbox = geometry.boundingBox;
+      const size = bbox
+        ? new THREE.Vector3(
+          Math.max(0.08, (bbox.max.x - bbox.min.x) * worldScale.x),
+          Math.max(0.08, (bbox.max.y - bbox.min.y) * worldScale.y),
+          Math.max(0.08, (bbox.max.z - bbox.min.z) * worldScale.z)
+        )
+        : new THREE.Vector3(0.24, 0.24, 0.24);
+
+      const shape = new AmmoLib.btBoxShape(new AmmoLib.btVector3(size.x * 0.5, size.y * 0.5, size.z * 0.5));
+      shape.setMargin(0.015);
+      const mass = THREE.MathUtils.randFloat(0.35, 1.2);
+      const body = createRigidBody(limbMesh, shape, mass);
+      body.setFriction(0.92);
+      body.setDamping(0.12, 0.55);
+      body.setActivationState(4);
+
+      const throwDir = new THREE.Vector3(
+        THREE.MathUtils.randFloatSpread(0.9),
+        THREE.MathUtils.randFloat(0.2, 0.85),
+        THREE.MathUtils.randFloatSpread(0.9)
+      ).addScaledVector(direction || new THREE.Vector3(0, 0, 1), 0.95).normalize();
+      const impulse = THREE.MathUtils.randFloat(
+        Number(goreConfig.limbImpulseMin) || 14,
+        Number(goreConfig.limbImpulseMax) || 26
+      );
+      const velocity = throwDir.multiplyScalar(impulse);
+      setBodyVelocity(body, velocity.x, velocity.y, velocity.z);
+
+      const angular = new AmmoLib.btVector3(
+        THREE.MathUtils.randFloatSpread(16),
+        THREE.MathUtils.randFloatSpread(16),
+        THREE.MathUtils.randFloatSpread(16)
+      );
+      body.setAngularVelocity(angular);
+      AmmoLib.destroy(angular);
+
+      sourceMesh.visible = false;
+      spawnBloodSpray(worldPos.clone().lerp(hitPoint || worldPos, 0.25), THREE.MathUtils.randInt(8, 14), 0.34, 34);
+      spawnBloodDecal(worldPos, 0.14 + Math.random() * 0.28);
+
+      const life = THREE.MathUtils.randFloat(
+        Number(goreConfig.limbLifeMin) || 4,
+        Number(goreConfig.limbLifeMax) || 6.5
+      );
+      if (debris.length >= limits.debris) removeDebris(0);
+      debris.push({
+        mesh: limbMesh,
+        body,
+        life,
+        totalLife: life,
+        floorY: 0.1,
+        lastVerticalVelocity: velocity.y,
+        impactCooldown: 0.05,
+        kind: 'limb',
+        bloodBouncesLeft: THREE.MathUtils.randInt(2, 4)
+      });
     }
 
     function damageDestructible(destructibleIndex, damage, direction) {
@@ -2319,10 +2528,20 @@
         lastRun = null;
       }
       if (!lastRun) {
-        hud.mainLastRun.textContent = 'Letzter Lauf: Kein Eintrag';
+        if (progression) {
+          const p = progression.getData();
+          hud.mainLastRun.textContent = 'Letzter Lauf: Kein Eintrag · Meta ' + Math.floor(p.metaPoints);
+        } else {
+          hud.mainLastRun.textContent = 'Letzter Lauf: Kein Eintrag';
+        }
         return;
       }
-      hud.mainLastRun.textContent = 'Letzter Lauf: Score ' + (lastRun.score || 0) + ' · Welle ' + (lastRun.wave || 1);
+      if (progression) {
+        const p = progression.getData();
+        hud.mainLastRun.textContent = 'Letzter Lauf: Score ' + (lastRun.score || 0) + ' · Welle ' + (lastRun.wave || 1) + ' · Meta ' + Math.floor(p.metaPoints);
+      } else {
+        hud.mainLastRun.textContent = 'Letzter Lauf: Score ' + (lastRun.score || 0) + ' · Welle ' + (lastRun.wave || 1);
+      }
     }
 
     function renderHighscores() {
@@ -2420,22 +2639,20 @@
     }
 
     function pickUpgradeOptions(count) {
-      const all = [
-        { id: 'damage', label: 'Mehr Schaden (+20%)' },
-        { id: 'speed', label: 'Mehr Speed (+15%)' },
-        { id: 'max_hp', label: 'Max HP +25' },
-        { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
-        { id: 'reserve', label: 'Mehr Reserve (+50%)' },
-        { id: 'firerate', label: 'Feuerrate +15%' }
-      ];
-      const chosen = [];
-      const pool = all.slice();
-      while (chosen.length < count && pool.length) {
-        const idx = Math.floor(Math.random() * pool.length);
-        chosen.push(pool[idx]);
-        pool.splice(idx, 1);
+      const all = Array.isArray(runtimeConfig.upgrades) && runtimeConfig.upgrades.length
+        ? runtimeConfig.upgrades
+        : [
+          { id: 'damage', label: 'Mehr Schaden (+20%)' },
+          { id: 'speed', label: 'Mehr Speed (+15%)' },
+          { id: 'max_hp', label: 'Max HP +25' },
+          { id: 'reload', label: 'Schnelleres Nachladen (-200ms)' },
+          { id: 'reserve', label: 'Mehr Reserve (+50%)' },
+          { id: 'firerate', label: 'Feuerrate +15%' }
+        ];
+      if (gameLogic.pickUpgradeOptions) {
+        return gameLogic.pickUpgradeOptions(count, all);
       }
-      return chosen;
+      return all.slice(0, count);
     }
 
     function applyUpgradeById(id) {
@@ -2455,6 +2672,7 @@
 
     function startNextWave() {
       state.upgradeMode = false;
+      if (progression) progression.onWaveCompleted(state.wave);
       state.wave += 1;
       respawnCratesForWave(state.wave);
       const currentWeapon = state.weapons[state.weaponKey];
@@ -2503,7 +2721,7 @@
         }
         if (effect.shrink) {
           const s = Math.max(0.08, lifeT);
-          effect.mesh.scale.setScalar(s);
+          effect.mesh.scale.setScalar(s * (effect.baseScale || 1));
         }
         if (effect.floorY !== undefined && effect.mesh.position.y <= effect.floorY) {
           effect.mesh.position.y = effect.floorY;
@@ -2561,7 +2779,17 @@
           vy > -1.1 &&
           piece.mesh.position.y <= 1.05
         ) {
-          spawnDustBurst(piece.mesh.position.clone(), THREE.MathUtils.randInt(6, 10));
+          if (piece.kind === 'limb') {
+            const bloodChance = Math.max(0, Math.min(1, Number(goreConfig.impactBloodChance) || 0.55));
+            if ((piece.bloodBouncesLeft || 0) > 0 && Math.random() < bloodChance) {
+              piece.bloodBouncesLeft -= 1;
+              spawnBloodMist(piece.mesh.position.clone(), THREE.MathUtils.randInt(3, 5));
+              spawnBloodDecal(piece.mesh.position.clone(), 0.14 + Math.random() * 0.18);
+            }
+            spawnDustPuff(piece.mesh.position.clone(), THREE.MathUtils.randInt(2, 4));
+          } else {
+            spawnDustBurst(piece.mesh.position.clone(), THREE.MathUtils.randInt(6, 10));
+          }
           piece.impactCooldown = 0.28;
         }
         piece.lastVerticalVelocity = vy;
@@ -2649,6 +2877,7 @@
       const def = weaponDefs[weaponKey];
       weapon.ammo = Math.max(weapon.ammo, def.magazine);
       weapon.reserve = Math.max(weapon.reserve, def.magazine * 3);
+      if (progression) progression.recordWeaponUnlock(weaponKey);
       switchWeapon(weaponKey);
     }
 
@@ -2750,12 +2979,19 @@
     }
 
     function trySpawnDrop(position) {
-      if (itemDrops.length >= 10) return;
-      const roll = Math.random();
-      if (roll < 0.18) {
-        spawnItemDrop('heal', position.clone());
-      } else if (roll < 0.26) {
-        spawnItemDrop('ammo', position.clone());
+      const maxDrops = Number(runtimeConfig.drops && runtimeConfig.drops.maxItems) || 10;
+      if (itemDrops.length >= maxDrops) return;
+      const table = runtimeConfig.drops && Array.isArray(runtimeConfig.drops.table)
+        ? runtimeConfig.drops.table
+        : [{ type: 'heal', chance: 0.18 }, { type: 'ammo', chance: 0.08 }];
+      let type = gameLogic.rollDropType ? gameLogic.rollDropType(table) : null;
+      if (!type && !gameLogic.rollDropType) {
+        const roll = Math.random();
+        if (roll < 0.18) type = 'heal';
+        else if (roll < 0.26) type = 'ammo';
+      }
+      if (type) {
+        spawnItemDrop(type, position.clone());
       }
     }
 
@@ -2851,6 +3087,13 @@
       if (zombieDeathEvents.length > 40) zombieDeathEvents.splice(0, zombieDeathEvents.length - 40);
     }
 
+    function acquirePooledEffectMesh(poolKey, createFn) {
+      const mesh = effectMeshPool ? effectMeshPool.acquire(poolKey, createFn) : createFn();
+      mesh.visible = true;
+      scene.add(mesh);
+      return mesh;
+    }
+
     function removeDebris(index) {
       const piece = debris[index];
       if (!piece) return;
@@ -2867,12 +3110,14 @@
     function spawnSparkBurst(origin, color, count, life, speed) {
       const particleCount = scaleEffectCount(count, 4);
       for (let i = 0; i < particleCount; i++) {
-        const mesh = new THREE.Mesh(
+        const poolKey = 'spark_' + color;
+        const mesh = acquirePooledEffectMesh(poolKey, () => new THREE.Mesh(
           new THREE.SphereGeometry(0.12, 6, 6),
           new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 })
-        );
+        ));
+        mesh.material.color.setHex(color);
+        mesh.material.opacity = 1;
         mesh.position.copy(origin);
-        scene.add(mesh);
 
         const velocity = new THREE.Vector3(
           THREE.MathUtils.randFloatSpread(1),
@@ -2880,7 +3125,7 @@
           THREE.MathUtils.randFloatSpread(1)
         ).normalize().multiplyScalar(speed * (0.55 + Math.random() * 0.65));
 
-        pushEffect({ mesh, velocity, life: life * (0.7 + Math.random() * 0.8), fade: 2.8, gravity: 18 });
+        pushEffect({ mesh, velocity, life: life * (0.7 + Math.random() * 0.8), fade: 2.8, gravity: 18, poolKey });
       }
     }
 
@@ -2888,13 +3133,15 @@
       const particleCount = scaleEffectCount(count, 4);
       for (let i = 0; i < particleCount; i++) {
         const size = 0.06 + Math.random() * 0.1;
-        const mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(size, 6, 6),
+        const poolKey = 'dust';
+        const mesh = acquirePooledEffectMesh(poolKey, () => new THREE.Mesh(
+          new THREE.SphereGeometry(0.12, 6, 6),
           new THREE.MeshBasicMaterial({ color: 0xc8b89a, transparent: true, opacity: 0.84 })
-        );
+        ));
+        mesh.material.opacity = 0.84;
+        mesh.scale.setScalar(size / 0.12);
         mesh.position.copy(origin);
         mesh.position.y = Math.max(0.12, origin.y * 0.4);
-        scene.add(mesh);
 
         const velocity = new THREE.Vector3(
           THREE.MathUtils.randFloatSpread(1),
@@ -2911,7 +3158,8 @@
           baseOpacity: 0.8,
           gravity: 12,
           drag: 3.1,
-          shrink: true
+          shrink: true,
+          poolKey
         });
       }
     }
@@ -2920,13 +3168,15 @@
       const particleCount = scaleEffectCount(count || 4, 2);
       for (let i = 0; i < particleCount; i++) {
         const size = 0.05 + Math.random() * 0.06;
-        const dust = new THREE.Mesh(
-          new THREE.SphereGeometry(size, 5, 5),
+        const poolKey = 'dust_puff';
+        const dust = acquirePooledEffectMesh(poolKey, () => new THREE.Mesh(
+          new THREE.SphereGeometry(0.1, 5, 5),
           new THREE.MeshBasicMaterial({ color: 0xc8b89a, transparent: true, opacity: 0.6 })
-        );
+        ));
+        dust.material.opacity = 0.6;
+        dust.scale.setScalar(size / 0.1);
         dust.position.copy(origin);
         dust.position.y += 0.05 + Math.random() * 0.06;
-        scene.add(dust);
         const totalLife = 0.24 + Math.random() * 0.2;
         pushEffect({
           mesh: dust,
@@ -2938,7 +3188,8 @@
           life: totalLife,
           totalLife,
           baseOpacity: 0.6,
-          drag: 3.4
+          drag: 3.4,
+          poolKey
         });
       }
     }
@@ -2972,19 +3223,21 @@
       const particleCount = scaleEffectCount(count, 8);
       for (let i = 0; i < particleCount; i++) {
         const size = 0.07 + Math.random() * 0.14;
-        const mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(size, 6, 6),
+        const poolKey = 'blood_spray';
+        const mesh = acquirePooledEffectMesh(poolKey, () => new THREE.Mesh(
+          new THREE.SphereGeometry(0.14, 6, 6),
           new THREE.MeshBasicMaterial({
             color: 0xb31616,
             transparent: true,
             opacity: 0.98,
             depthWrite: false
           })
-        );
+        ));
+        mesh.material.opacity = 0.98;
+        mesh.scale.setScalar(size / 0.14);
         mesh.position.copy(origin);
         mesh.position.y += Math.random() * 1.2;
         mesh.renderOrder = 18;
-        scene.add(mesh);
 
         const velocity = new THREE.Vector3(
           THREE.MathUtils.randFloatSpread(1.2),
@@ -3003,7 +3256,8 @@
           gravity: 14,
           drag: 0.22,
           floorY: 0.09,
-          settle: true
+          settle: true,
+          poolKey
         });
       }
     }
@@ -3012,13 +3266,15 @@
       const particleCount = scaleEffectCount(count, 3);
       for (let i = 0; i < particleCount; i++) {
         const size = 0.02 + Math.random() * 0.04;
-        const mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(size, 5, 5),
+        const poolKey = 'blood_mist';
+        const mesh = acquirePooledEffectMesh(poolKey, () => new THREE.Mesh(
+          new THREE.SphereGeometry(0.06, 5, 5),
           new THREE.MeshBasicMaterial({ color: 0xaa1a1a, transparent: true, opacity: 0.92 })
-        );
+        ));
+        mesh.material.opacity = 0.92;
+        mesh.scale.setScalar(size / 0.06);
         mesh.position.copy(origin);
         mesh.position.y += Math.random() * 0.7;
-        scene.add(mesh);
 
         const velocity = new THREE.Vector3(
           THREE.MathUtils.randFloatSpread(1),
@@ -3035,7 +3291,8 @@
           baseOpacity: 0.9,
           gravity: 12,
           drag: 3.6,
-          shrink: true
+          shrink: true,
+          poolKey
         });
       }
     }
@@ -3185,6 +3442,11 @@
       const effect = effects[index];
       if (!effect) return;
       scene.remove(effect.mesh);
+      if (effect.poolKey && effectMeshPool) {
+        effectMeshPool.release(effect.poolKey, effect.mesh);
+        effects.splice(index, 1);
+        return;
+      }
       if (!effect.preserveMaterial && effect.mesh.material && typeof effect.mesh.material.dispose === 'function') {
         effect.mesh.material.dispose();
       }
@@ -3196,6 +3458,9 @@
 
     function pushEffect(effect) {
       if (effects.length >= limits.effects) removeEffect(0);
+      if (effect && effect.baseScale === undefined && effect.mesh && effect.mesh.scale) {
+        effect.baseScale = effect.mesh.scale.x || 1;
+      }
       effects.push(effect);
     }
 
@@ -3332,6 +3597,13 @@
       state.paused = false;
       state.upgradeMode = false;
       state.mouseDown = false;
+      if (progression) {
+        progression.onRunEnded({
+          score: state.score,
+          wave: state.wave,
+          kills: state.totalKills
+        });
+      }
       const entriesBefore = loadHighscores();
       const bestBefore = entriesBefore.length ? Number(entriesBefore[0].score || 0) : 0;
       saveHighscore(state.score, state.wave);

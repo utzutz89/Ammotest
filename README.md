@@ -10,6 +10,7 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - realistischere Urban-Map (Strassenkreuzung, Gehwege, Lampen, Wracks, Schmutzlayer)
 - zusaetzliche Stadtkulisse mit Gebaeudebloecken, Fassaden-Fenstern und Rooftop-Details
 - erweitertes Gore-System (Hit-Mist, Surface-Splatter, starke Death-Bursts, Organ-Chunks)
+- physikbasiertes Dismember-System (abtrennbare Zombie-Limbs mit Ammo-RigidBodies, Impuls und Blutspur)
 - ragdoll-aehnliches Zombie-Sterben (kurz liegen bleiben, ausfaden, dann cleanup)
 - Objekt-Destruktion fuer Kisten/Stein/Beton mit physikalischen Fragmenten
 - Impact-Staubbursts bei schweren Bodenaufprallen (Kisten + Truemmer)
@@ -24,6 +25,9 @@ Dieses Projekt ist ein lokaler Top-Down-Shooter mit echter 3D-Pipeline:
 - komplettes Screen-Menuesystem (Hauptmenue, Einstellungen, Highscores, Pause, Game Over)
 - Post-Processing Pipeline (SSAO, Vignette, FXAA) mit Fallback auf direkten Renderer
 - helleres Tageslicht-Tuning (Exposure/Fog/Light-Rig/Material-Balance) fuer bessere Lesbarkeit von Strassen und Umgebung
+- modulares Gameplay-Setup (`src/game-config.js`, `src/game-logic.js`, `src/progression.js`, `src/debug-overlay.js`)
+- persistente Meta-Progression (Meta-Punkte + dauerhafte Weapon-Unlocks ueber localStorage)
+- Debug-Telemetrie-Overlay (F3: FPS, Drawcalls, Effekte, Physik-Objekte, Pool-Stats)
 
 ## Runtimes herunterladen
 
@@ -61,6 +65,7 @@ Bei `file://` wird `vendor/ammo.wasm.binary.js` geladen, damit Ammo ohne blockie
 - `R`: nachladen
 - `1/2/3` oder Mausrad: Waffen wechseln
 - `ESC`: Pausemenue oeffnen/schliessen
+- `F3`: Debug-Overlay ein/aus
 
 ## Hinweis
 
@@ -88,3 +93,5 @@ Nach groesseren Gameplay-/Grafikaenderungen wird standardmaessig geprueft:
 
 1. Starttest (`index.html` oeffnen, `Enter` pruefen)
 2. kurzer Laufzeittest (ca. 5s) auf Grafikfehler (Flackern/Startfehler) mit Browser-Automation
+3. Logiktests: `./scripts/run-logic-tests.sh`
+4. Single-File-Check: `./scripts/build-single-file.sh`

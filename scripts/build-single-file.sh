@@ -82,6 +82,10 @@ done
 inject_inline "window.__BUNDLED__ = true;"
 echo "[ok] injected: window.__BUNDLED__ flag"
 
+inject_script "$ROOT_DIR/src/game-config.js"
+inject_script "$ROOT_DIR/src/game-logic.js"
+inject_script "$ROOT_DIR/src/progression.js"
+inject_script "$ROOT_DIR/src/debug-overlay.js"
 inject_script "$ROOT_DIR/src/runtime-loader.js"
 inject_script "$ROOT_DIR/src/game.js"
 

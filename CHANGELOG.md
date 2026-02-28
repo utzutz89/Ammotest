@@ -6,6 +6,12 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 ### Added
+- Added modular gameplay/config split with new runtime modules: `src/game-config.js`, `src/game-logic.js`, `src/progression.js`, and `src/debug-overlay.js`.
+- Added persistent meta-progression (meta points, permanent weapon unlock persistence, passive run bonuses) via localStorage.
+- Added F3 debug telemetry overlay (FPS, draw calls, active effects/decals/debris, physics count, pooled mesh stats).
+- Added lightweight logic validation suite (`src/tests/logic.test.js`) and runner script `scripts/run-logic-tests.sh`.
+- Added physics-based dismemberment system for zombie deaths (detached limbs as Ammo rigid bodies with impulse, spin, lifetime and bounce blood trails).
+- Added configurable gore tuning block in `src/game-config.js` (`gore.*`), including dismember chance/intensity and limb physics caps.
 - Added `scripts/build-single-file.sh` to generate a self-contained `dist/index.html` bundle for file-sharing.
 - Added `scripts/package.sh` to create `dist/shooter-release-YYYYMMDD.zip` from the single-file build.
 - Added urban building blocks with collision, facade window grids, rooftop details, and reserved spawn footprints.
@@ -40,6 +46,10 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 - Added periodic crate respawn system (every 3 waves) using remembered spawn points.
 
 ### Changed
+- Updated `index.html` and single-file bundling pipeline to include new gameplay modules while preserving `file://` offline startup behavior.
+- Reworked gore death pipeline to support intensity scaling and post-impact blood events for detached limbs.
+- Updated adaptive FX/debris limits to be computed dynamically from runtime performance pressure.
+- Added mesh pooling in high-frequency particle paths to reduce allocation churn and improve stability under heavy gore load.
 - Added bundled-mode guard to `src/runtime-loader.js` via `window.__BUNDLED__` to skip external runtime loading in single-file builds.
 - Added `dist/` to `.gitignore` (build artifacts excluded from repository tracking).
 - Brightened the visual baseline significantly (tone mapping exposure, fog/background, light rig, vignette, and brighter road/ground materials).
